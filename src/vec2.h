@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-using Float = long double;
+using Float = double;
 
 struct vec2 {
 	Float x;
