@@ -1,4 +1,4 @@
-#include "fractals.h"
+#include "automata.h"
 
 #include "utils/ExternalResource.h"
 #include "IO.h"
@@ -10,6 +10,8 @@ auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
 
 bool g_doShowPropertiesWindow = true;
 bool g_propertiesWindowHovered = false;
+
+ConwayGrid g_grid{ 1000, 1000 };
 
 /**
  * Shows the properties window, allowing users to modify Mandelbrot set options.
@@ -26,20 +28,8 @@ void ShowPropertiesWindow() {
     // Check if the properties window is hovered
     g_propertiesWindowHovered = ImGui::IsWindowHovered();
 
-    // Display radio buttons to choose between Mandelbrot and Julia sets
-    ImGui::SeparatorText("Type:");
-    ImGui::RadioButton("Mandelbrot", (int*)&g_options.type, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Julia", (int*)&g_options.type, 1);
-
-    // Display and allow modification of the maximum iterations
-    ImGui::SeparatorText("Max iterations:");
-    ImGui::Text("Maximum iterations at zoom: 1.0");
-    ImGui::DragInt("##maxIterations", &g_options.baseIterations, 1, 25, 400);
-
-    // Display and allow modification of the iteration increase falloff
-    ImGui::SeparatorText("Iteration increase falloff:");
-    ImGui::DragFloat("##iterationIncreaseFalloff", &g_options.iterationIncreaseFallOff, 0.02f, 2.f, 20.f);
+    ImGui::SeparatorText("State Transition Tick Delay:");
+    ImGui::DragInt("##stateTransitionTickDelay", &g_options.stateTransitionTickDelay, 1, 0, 100);
 
     ImGui::End();
 }
@@ -106,7 +96,8 @@ int main() {
         IO::HandleEvents();
         g_options.windowWidth = IO::GetWindowWidth();
         g_options.windowHeight = IO::GetWindowHeight();
-        vec2 normalizedMousePos = IO::NormalizePixel(IO::GetMousePos().x, IO::GetMousePos().y);
+        vec2 normalizedMousePos = IO::NormalizePixel((int)IO::GetMousePos().x, (int)IO::GetMousePos().y);
+        vec2 mouseWorldPos = normalizedMousePos / 2 / g_options.camera.zoom - g_options.camera.position;
 
         // Draw GUI
         ShowPropertiesWindow();
@@ -114,29 +105,31 @@ int main() {
         // Reset camera when space is pressed
         const Uint8* state = SDL_GetKeyboardState(nullptr);
         if (state[SDL_SCANCODE_SPACE]) {
-            g_options.SetProperty({ 0, 0 });
             g_options.camera.position = { 0, 0 };
-            g_options.camera.zoom = 0.2;
+            g_options.camera.zoom = 1;
         }
 
         // Begin dragging if left mouse button is clicked
-        static vec2 z0Start;
+        static vec2 dragStart;
         static bool dragDisabled = false;
         if (IO::MouseClicked(SDL_BUTTON_LEFT)) {
             dragDisabled = g_propertiesWindowHovered;
-            z0Start = g_options.GetProperty();
-            dragStart = normalizedMousePos;
+            dragStart = mouseWorldPos;
         }
 
         // Update fractal property during mouse drag (if dragging is allowed)
         if (IO::IsButtonDown(SDL_BUTTON_LEFT) && !dragDisabled) {
-            g_options.SetProperty(z0Start + 0.25L * (normalizedMousePos - dragStart) / g_options.camera.zoom);
+            g_options.camera.position = (mouseWorldPos - dragStart);
+        }
+
+        if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && !g_propertiesWindowHovered) {
+            g_grid.set(floor(mouseWorldPos.x), floor(mouseWorldPos.y), 1);
         }
 
         // Handle zooming based on mouse wheel movement
         static Float zoom = 1.L;
-        static Float zoomDP = 1.02;
-        static Float zoomDN = 1.035;
+        static Float zoomDP = 1.055;
+        static Float zoomDN = 1.055;
         if (IO::GetMouseWheel() > 0)
             zoom = zoomDP;
         else if (IO::GetMouseWheel() < 0)
@@ -146,10 +139,11 @@ int main() {
         if (abs(zoom - 1.L) > 0.0001f)
             g_options.camera.position = g_options.camera.position - 0.5L * normalizedMousePos / g_options.camera.zoom + 0.5L * normalizedMousePos / (g_options.camera.zoom * zoom);
         g_options.camera.zoom *= zoom;
-        zoom = 1.L + (zoom - 1.L) * 0.975L;
+        zoom = 1.L + (zoom - 1.L) * 0.75L;
 
         // Invoke CUDA function for Mandelbrot set computation
-        mandelbrotCuda(g_options, (int)((float)g_options.baseIterations * powl(g_options.camera.zoom, 1.0L / g_options.iterationIncreaseFallOff)));
+        static long c_tickCount = 0;
+        conwayCuda(g_options, &g_grid, g_options.stateTransitionTickDelay == 0 ? false : ((c_tickCount++) % g_options.stateTransitionTickDelay == 0));
 
         IO::Render();
 
@@ -163,5 +157,3 @@ int main() {
 
     return 0;
 }
-
-
