@@ -4,6 +4,7 @@
 #include "IO.h"
 
 #include <stdio.h>
+#include <curand_kernel.h>
 
 __device__ Float maxf(Float a, Float b) {
     return (a > b) ? a : b;
@@ -11,6 +12,15 @@ __device__ Float maxf(Float a, Float b) {
 
 __device__ Float minf(Float a, Float b) {
     return (a < b) ? a : b;
+}
+
+__device__ int generateRandomInt(int thread_id, int seed) {
+    static curandState* state = nullptr;
+    if (state == nullptr) {
+        state = new curandState{};
+        curand_init(seed, thread_id, 0, state);
+    }
+    return curand(state);
 }
 
 /**
@@ -31,13 +41,15 @@ __global__ void calcPixel(IO::RGB* buffer, Options options, const ConwayGrid gri
 
     int x = floor(x0), y = floor(y0);
 
-    char color = (grid.at_device(x, y) == 1) ? 0xff : 0x00;
-        
-    //color = grid.getBuffer()[0] == 1 ? 0xff : 0x01;
-    //color = x + y;
-    //color = grid.width();
-    //color = x0 + y0;
+    const int s = 1;
+    float sum_neighborhood = 0;
+    for (int d = -12; d <= 12; ++d)
+        sum_neighborhood += grid.get(x + d % 5, y + d / 5) * (5 - (abs(d % 5) + abs(d / 5)));
+    //int sum_neighborhood = grid.get(x + 1, y) + grid.get(x + 1, y + 1) + grid.get(x, y + 1) + grid.get(x - 1, y + 1)
+    //    + grid.get(x - 1, y) + grid.get(x - 1, y - 1) + grid.get(x, y - 1) + grid.get(x + 1, y - 1);
 
+    char color = 255.f * sum_neighborhood / (float)25;
+        
     // Store the RGB color values in the buffer, clamped to the range [0, 255]
     buffer[i].r = minf(255.f, color);
     buffer[i].g = minf(255.f, color);
@@ -50,10 +62,10 @@ __global__ void calcNextState(Options options, const ConwayGrid grid) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int i = y * grid.width() + x;
 
-    T cell = grid.at_device(x, y);
+    T cell = grid.get(x, y);
     T newCell = grid.outerValue;
-    int sum_neighborhood = grid.at_device(x + 1, y) + grid.at_device(x + 1, y + 1) + grid.at_device(x, y + 1) + grid.at_device(x - 1, y + 1)
-        + grid.at_device(x - 1, y) + grid.at_device(x - 1, y - 1) + grid.at_device(x, y - 1) + grid.at_device(x + 1, y - 1);
+    int sum_neighborhood = grid.get(x + 1, y) + grid.get(x + 1, y + 1) + grid.get(x, y + 1) + grid.get(x - 1, y + 1)
+        + grid.get(x - 1, y) + grid.get(x - 1, y - 1) + grid.get(x, y - 1) + grid.get(x + 1, y - 1);
     if (cell == 1) {
         if (sum_neighborhood < 2)
             newCell = 0;
@@ -67,14 +79,16 @@ __global__ void calcNextState(Options options, const ConwayGrid grid) {
             newCell = 1;
     }
 
-    grid.getBuffer()[i] = newCell;
+    if (generateRandomInt(i, 0) % 5000 == 0)
+        newCell = 1;
+
+    grid.set(x, y, newCell);
 }
 
 cudaError_t conwayCuda(Options options, ConwayGrid* _grid, bool advanceState) {
-    using cell_t = std::remove_pointer_t<decltype(_grid)>::value_t;
+    using cell_t = std::remove_pointer_t<decltype(_grid)>::cell_t;
 
     IO::RGB* gpuBuffer = 0;
-    cell_t* gridGpuBuffer = nullptr;
     cudaError_t cudaStatus;
     std::remove_pointer_t<decltype(_grid)> grid = *_grid;
 
@@ -92,14 +106,9 @@ cudaError_t conwayCuda(Options options, ConwayGrid* _grid, bool advanceState) {
         return cudaStatus;
     }
 
-    cudaStatus = cudaMalloc((void**)&gridGpuBuffer, grid.width() * grid.height() * sizeof(cell_t));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!\n");
-        return cudaStatus;
-    }
-    grid.setCudaBuffer(gridGpuBuffer);
+    grid.setCudaBuffer();
 
-    dim3 block_size(16, 16);
+    dim3 block_size(20, 20);
 
     dim3 grid_size(grid.width() / block_size.x, grid.height() / block_size.y);
     if (advanceState)
@@ -121,7 +130,7 @@ cudaError_t conwayCuda(Options options, ConwayGrid* _grid, bool advanceState) {
     //}
 
     //// Copy output vector from GPU buffer to host memory.
-    //cudaStatus = cudaMemcpy((unsigned char*)grid->getBuffer(), gridGpuBuffer, grid->width() * grid->height() * sizeof(cell_t), cudaMemcpyDeviceToHost);
+    //cudaStatus = cudaMemcpy((unsigned char*)grid->getInputBuffer(), gridGpuBuffer, grid->width() * grid->height() * sizeof(cell_t), cudaMemcpyDeviceToHost);
     //if (cudaStatus != cudaSuccess) {
     //    fprintf(stderr, "cudaMemcpy failed!");
     //    goto Error;
@@ -156,7 +165,7 @@ cudaError_t conwayCuda(Options options, ConwayGrid* _grid, bool advanceState) {
 
 Cleanup:
     cudaFree(gpuBuffer);
-    cudaFree(gridGpuBuffer);
+    grid.cleanupCudaBuffer();
 
     //std::cout << "done" << std::endl;
 
