@@ -11,7 +11,7 @@ auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
 bool g_doShowPropertiesWindow = true;
 bool g_propertiesWindowHovered = false;
 
-ConwayGrid g_grid{ 1000, 1000 };
+ConwayGrid g_grid{ 2000, 2000 };
 
 /**
  * Shows the properties window, allowing users to modify Mandelbrot set options.
@@ -122,8 +122,14 @@ int main() {
             g_options.camera.position = (mouseWorldPos - dragStart);
         }
 
+        static bool c_valueToSet = 1;
+        int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
+        int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
+        if (IO::MouseClicked(SDL_BUTTON_RIGHT)) {
+            c_valueToSet = !(bool)g_grid.get(mouseWorldPosFlooredX, mouseWorldPosFlooredY);
+        }
         if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && !g_propertiesWindowHovered) {
-            g_grid.set(floor(mouseWorldPos.x), floor(mouseWorldPos.y), 1);
+            g_grid.set(mouseWorldPosFlooredX, mouseWorldPosFlooredY, c_valueToSet);
         }
 
         // Handle zooming based on mouse wheel movement
