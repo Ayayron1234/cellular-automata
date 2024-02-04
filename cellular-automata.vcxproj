@@ -86,7 +86,9 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="src\automata.cu" />
+    <CudaCompile Include="src\conway.cu" />
+    <CudaCompile Include="src\global data\grid_display.cu" />
+    <CudaCompile Include="src\temp.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_sdl2.h" />
@@ -100,12 +102,16 @@
     <ClInclude Include="dependencies\imgui\imstb_rectpack.h" />
     <ClInclude Include="dependencies\imgui\imstb_textedit.h" />
     <ClInclude Include="dependencies\imgui\imstb_truetype.h" />
-    <ClInclude Include="src\automata.h" />
-    <ClInclude Include="src\grid.h" />
+    <CudaCompile Include="src\camera.h" />
+    <ClInclude Include="src\global data\global_object.h" />
+    <CudaCompile Include="src\global data\grid.h" />
+    <CudaCompile Include="src\global data\grid_display.h" />
+    <CudaCompile Include="src\global data\kernel.h" />
+    <CudaCompile Include="src\temp.h" />
     <ClInclude Include="src\utils\ExternalResource.h" />
     <ClInclude Include="src\IO.h" />
     <ClInclude Include="src\utils\Json.h" />
-    <ClInclude Include="src\vec2.h" />
+    <CudaCompile Include="src\vec2.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dependencies\imgui\backends\imgui_impl_sdl2.cpp" />
@@ -118,8 +124,12 @@
     <ClCompile Include="dependencies\imgui\imgui_stdlib.cpp" />
     <ClCompile Include="dependencies\imgui\imgui_tables.cpp" />
     <ClCompile Include="dependencies\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="src\cellular-automata.cpp" />
+    <CudaCompile Include="src\cellular-automata.cpp">
+      <FileType>Document</FileType>
+    </CudaCompile>
+    <ClInclude Include="src\global data\global_buffer.h" />
     <ClCompile Include="src\IO.cpp" />
+    <CudaCompile Include="src\options.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
