@@ -1,4 +1,6 @@
-#include "automata.h"
+//#include "automata.h"
+#include "global data/grid.h"
+#include "global data/grid_display.h"
 
 #include "utils/ExternalResource.h"
 #include "IO.h"
@@ -6,12 +8,27 @@
 #include <SDL2/SDL.h>
 #undef main
 
+#include "vec2.h"
+#include "utils/Json.h"
+
+#include <chrono>
+
+#include "global data/kernel.h"
+
+#include "temp.h"
+
+#include <curand_kernel.h>
+
 auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
 
 bool g_doShowPropertiesWindow = true;
 bool g_propertiesWindowHovered = false;
 
-ConwayGrid g_grid{ 2000, 2000 };
+long long g_updateDuration;
+long long g_renderDuration;
+
+
+//ConwayGrid g_grid{ 2000, 2000 };
 
 /**
  * Shows the properties window, allowing users to modify Mandelbrot set options.
@@ -30,6 +47,17 @@ void ShowPropertiesWindow() {
 
     ImGui::SeparatorText("State Transition Tick Delay:");
     ImGui::DragInt("##stateTransitionTickDelay", &g_options.stateTransitionTickDelay, 1, 0, 100);
+
+    // Display radio buttons to choose between Mandelbrot and Julia sets
+    ImGui::SeparatorText("Type:");
+    ImGui::RadioButton("Conway's Game of Life", (int*)&g_options.automataType, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Falling Sand", (int*)&g_options.automataType, 1);
+
+    // Display render and update durations
+    ImGui::SeparatorText("Performance:");
+    ImGui::Text("Update: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_updateDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
+    ImGui::Text("Render: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_renderDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
 
     ImGui::End();
 }
@@ -87,8 +115,21 @@ void HandleDroppedFile(const std::wstring& path) {
     delete[] charPath;
 }
 
+// TODO: temp
+
 int main() {
     IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
+
+    Grid<int> grid(2000, 2000);
+    grid.Load("grid.bin");
+
+    // TODO: temp
+    GlobalReadWriteBuffer<int> tmpBuff{};
+    tmpBuff.SetUp(40 * 40);
+    auto tmpKernel = Kernel(test, &tmpBuff);
+    tmpKernel.Execute(g_options);
+    for (int i = 0; i < tmpBuff.Size() / sizeof(int); ++i)
+        std::cout << tmpBuff.Read(i) << std::endl;
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
@@ -126,10 +167,10 @@ int main() {
         int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
         int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
         if (IO::MouseClicked(SDL_BUTTON_RIGHT)) {
-            c_valueToSet = !(bool)g_grid.get(mouseWorldPosFlooredX, mouseWorldPosFlooredY);
+            c_valueToSet = !(bool)grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY);
         }
         if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && !g_propertiesWindowHovered) {
-            g_grid.set(mouseWorldPosFlooredX, mouseWorldPosFlooredY, c_valueToSet);
+            grid.Set(mouseWorldPosFlooredX, mouseWorldPosFlooredY, c_valueToSet);
         }
 
         // Handle zooming based on mouse wheel movement
@@ -149,15 +190,32 @@ int main() {
 
         // Invoke CUDA function for Mandelbrot set computation
         static long c_tickCount = 0;
-        conwayCuda(g_options, &g_grid, g_options.stateTransitionTickDelay == 0 ? false : ((c_tickCount++) % g_options.stateTransitionTickDelay == 0));
+        if (g_options.stateTransitionTickDelay != 0 && (c_tickCount++) % g_options.stateTransitionTickDelay == 0) {
+            auto updateStart = std::chrono::high_resolution_clock::now();
+            grid.NextState(g_options);
+            auto updateEnd = std::chrono::high_resolution_clock::now();
+            g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
+        }
+        else
+            grid.Update();
 
+        // Render and draw to screen
+        auto renderStart = std::chrono::high_resolution_clock::now();
+
+        GridDisplay::DrawGrid(grid, g_options);
         IO::Render();
+
+        auto renderEnd = std::chrono::high_resolution_clock::now();
+        g_renderDuration = std::chrono::duration_cast<std::chrono::microseconds>(renderEnd - renderStart).count();
+
 
         // Handle dropped files
         if (IO::FileDropped()) {
             HandleDroppedFile(IO::GetDroppedFilePath());
         }
     }
+
+    grid.Save("grid.bin");
 
     IO::Quit();
 
