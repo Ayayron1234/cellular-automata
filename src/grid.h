@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
-#include "global_buffer.h"
-#include "../options.h"
+#include "utils/options.h"
+#include "device_helpers.h"
 
 template <typename T>
 class Grid {
@@ -40,8 +40,12 @@ public:
         m_buffer.SyncFromDevice();
     }
 
-    void Update() {
-        m_buffer.SyncFromHost();
+    void SyncFromHost(bool async = false) {
+        m_buffer.SyncFromHost(async);
+    }
+
+    void SyncFromDevice(bool async = false) {
+        m_buffer.SyncFromDevice(async);
     }
 
     __host__ __device__
@@ -85,7 +89,8 @@ public:
 
 private:
     int m_width, m_height;
-    GlobalReadWriteBuffer<cell_t> m_buffer{};
+    GlobalBuffer<cell_t> m_buffer{};
+    //GlobalReadWriteBuffer<cell_t> m_buffer{};
    
     void advanceState(Options options);
 

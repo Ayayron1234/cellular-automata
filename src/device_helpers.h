@@ -1,9 +1,36 @@
 #pragma once
-#include <utility>
 #include <iostream>
+#include <source_location>
 #include <curand_kernel.h>
+#include <utility>
+#include <stack>
 
-#include "global_object.h"
+class GlobalObject {
+protected:
+	static void checkError(const char* function, cudaError_t errorCode,
+		bool shouldExit = true, const std::source_location location = std::source_location::current())
+	{
+		if (errorCode == cudaSuccess)
+			return;
+
+		std::cerr << "[GlobalReadWriteBuffer] " << function << " returned error code " << errorCode << ":\n\t" << cudaGetErrorString(errorCode) << std::endl;
+		std::clog << "\tFile: "
+			<< location.file_name() << '('
+			<< location.line() << ':'
+			<< location.column() << ") `"
+			<< location.function_name() << std::endl;
+
+		if (shouldExit)
+			exit(1);
+	}
+
+};
+
+template <typename T>
+concept GlobalDataHandler_C = requires(T t) {
+	{ t.SyncFromDevice(true) };
+	{ t.SyncFromHost(true) };
+};
 
 template <typename T>
 class GlobalBuffer : public GlobalObject {
@@ -32,6 +59,44 @@ public:
 		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
 	}
 
+	// Sync the data on the cpu's object from the gpu's
+	void SyncFromDevice(bool async = false) {
+		cudaError_t cudaStatus;
+		if (async)
+			cudaStatus = cudaMemcpyAsync(m_hostBuffer, m_deviceBuffer, Size(), cudaMemcpyDeviceToHost);
+		else
+			cudaStatus = cudaMemcpy(m_hostBuffer, m_deviceBuffer, Size(), cudaMemcpyDeviceToHost);
+		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
+	}
+
+	// Sync the data on the gpu's object from the cpu's
+	void SyncFromHost(bool async = false) {
+		cudaError_t cudaStatus;
+		if (async)
+			cudaStatus = cudaMemcpyAsync(m_deviceBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
+		else
+			cudaStatus = cudaMemcpy(m_deviceBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
+		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
+	}
+
+	__host__ __device__
+	const T& Read(int index) const {
+		#ifndef __CUDA_ARCH__
+		return m_hostBuffer[index];
+		#else
+		return m_deviceBuffer[index];
+		#endif
+	}
+
+	__host__ __device__
+	void Write(int index, const T& data) {
+		#ifndef __CUDA_ARCH__
+		m_hostBuffer[index] = data;
+		#else
+		m_deviceBuffer[index] = data;
+		#endif
+	}
+
 	void CleanupDevice() {
 		if (m_deviceBuffer != nullptr)
 			cudaFree(m_deviceBuffer);
@@ -45,8 +110,8 @@ public:
 
 private:
 	size_t m_bufferSize;
-	T* m_hostBuffer;
-	T* m_deviceBuffer;
+	T* m_hostBuffer = nullptr;
+	T* m_deviceBuffer = nullptr;
 
 	void checkErrorAndCleanup(const char* function, cudaError_t errorCode,
 		bool shouldExit = true, const std::source_location location = std::source_location::current()) {
@@ -97,14 +162,22 @@ public:
 	}
 
 	// Sync the data on the cpu's object from the gpu's
-	void SyncFromDevice() {
-		cudaError_t cudaStatus = cudaMemcpy(m_hostBuffer, m_deviceWriteBuffer, Size(), cudaMemcpyDeviceToHost);
+	void SyncFromDevice(bool async = false) {
+		cudaError_t cudaStatus;
+		if (async)
+			cudaStatus = cudaMemcpyAsync(m_hostBuffer, m_deviceWriteBuffer, Size(), cudaMemcpyDeviceToHost);
+		else
+			cudaStatus = cudaMemcpy(m_hostBuffer, m_deviceWriteBuffer, Size(), cudaMemcpyDeviceToHost);
 		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
 	}
 
 	// Sync the data on the gpu's object from the cpu's
-	void SyncFromHost() {
-		cudaError_t cudaStatus = cudaMemcpy(m_deviceReadBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
+	void SyncFromHost(bool async = false) {
+		cudaError_t cudaStatus;
+		if (async)
+			cudaStatus = cudaMemcpyAsync(m_deviceReadBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
+		else
+			cudaStatus = cudaMemcpy(m_deviceReadBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
 		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
 	}
 
@@ -145,10 +218,10 @@ public:
 	void CleanupDevice() {
 		if (m_deviceReadBuffer != nullptr)
 			cudaFree(m_deviceReadBuffer);
-		
+
 		if (m_deviceWriteBuffer != nullptr)
 			cudaFree(m_deviceWriteBuffer);
-		
+
 		m_deviceReadBuffer = nullptr;
 		m_deviceWriteBuffer = nullptr;
 	}
@@ -171,6 +244,71 @@ private:
 
 		CleanupDevice();
 		checkError(function, errorCode, shouldExit, location);
+	}
+
+};
+
+class IKernel : public GlobalObject {
+public:
+	static void AwaitDevice() {
+		cudaError_t cudaStatus = cudaDeviceSynchronize();
+		checkError("cudaDeviceSynchronize", cudaStatus);
+	}
+
+	static void SyncAllFromDevice() {
+		AwaitDevice();
+
+		while (!s_kernelsToSyncFromDevice.empty()) {
+			s_kernelsToSyncFromDevice.top()->syncFromDevice();
+			s_kernelsToSyncFromDevice.pop();
+		}
+
+		AwaitDevice();
+	}
+
+protected:
+	inline static std::stack<IKernel*> s_kernelsToSyncFromDevice{};
+
+	virtual void syncFromDevice() = 0;
+};
+
+template <GlobalDataHandler_C T, class... Args>
+class Kernel : public IKernel {
+public:
+	Kernel(void(*kernelFncPtr)(T, Args...), T* data)
+		: m_function(kernelFncPtr)
+		, m_data(data)
+	{ }
+
+	void Execute(Args ...args) {
+		m_function(*m_data, args...);
+
+		cudaError_t cudaStatus = cudaGetLastError();
+		checkError("cudaGetLastError", cudaStatus);
+
+		s_kernelsToSyncFromDevice.push(this);
+	}
+
+	void ExecuteAndSync(Args ...args) {
+		m_function(*m_data, args...);
+
+		cudaError_t cudaStatus = cudaGetLastError();
+		checkError("cudaGetLastError", cudaStatus);
+
+		AwaitDevice();
+
+		syncFromDevice();
+	}
+
+
+private:
+	void(*m_function)(T, Args...);
+	T* m_data;
+
+	using SyncFunction = void();
+
+	virtual void syncFromDevice() override {
+		m_data->SyncFromDevice(true);
 	}
 
 };
