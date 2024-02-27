@@ -1,23 +1,8 @@
-//#include "automata.h"
-#include "global data/grid.h"
-#include "global data/grid_display.h"
-
-#include "utils/ExternalResource.h"
 #include "IO.h"
-
-#include <SDL2/SDL.h>
-#undef main
-
-#include "vec2.h"
-#include "utils/Json.h"
-
-#include <chrono>
-
-#include "global data/kernel.h"
-
-#include "temp.h"
-
-#include <curand_kernel.h>
+#include "utils.h"
+#include "device_helpers.h"
+#include "kernels.h"
+#include "grid.h"
 
 auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
 
@@ -26,9 +11,6 @@ bool g_propertiesWindowHovered = false;
 
 long long g_updateDuration;
 long long g_renderDuration;
-
-
-//ConwayGrid g_grid{ 2000, 2000 };
 
 /**
  * Shows the properties window, allowing users to modify Mandelbrot set options.
@@ -115,21 +97,18 @@ void HandleDroppedFile(const std::wstring& path) {
     delete[] charPath;
 }
 
-// TODO: temp
-
 int main() {
     IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
 
-    Grid<int> grid(2000, 2000);
+    Grid<int> grid(128, 128);
     grid.Load("grid.bin");
 
-    // TODO: temp
-    GlobalReadWriteBuffer<int> tmpBuff{};
-    tmpBuff.SetUp(40 * 40);
-    auto tmpKernel = Kernel(test, &tmpBuff);
-    tmpKernel.Execute(g_options);
-    for (int i = 0; i < tmpBuff.Size() / sizeof(int); ++i)
-        std::cout << tmpBuff.Read(i) << std::endl;
+    GlobalBuffer<IO::RGB> outputBuffer;
+    outputBuffer.SetUp(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer());
+
+    auto fallingSandKernel = Kernel(fallingSand, &grid);
+    auto gameOfLifeKernel = Kernel(gameOfLife, &grid);
+    auto drawGridKernel = Kernel(drawGrid, &outputBuffer);
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
@@ -163,13 +142,19 @@ int main() {
             g_options.camera.position = (mouseWorldPos - dragStart);
         }
 
-        static bool c_valueToSet = 1;
+        static int c_valueToSet = 1;
+        if (state[SDL_SCANCODE_1])
+            c_valueToSet = 1;
+        if (state[SDL_SCANCODE_2])
+            c_valueToSet = 2;
+
         int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
         int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
         if (IO::MouseClicked(SDL_BUTTON_RIGHT)) {
-            c_valueToSet = !(bool)grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY);
+            c_valueToSet = (grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY) == 0) ? c_valueToSet : 0;
         }
         if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && !g_propertiesWindowHovered) {
+            std::cout << c_valueToSet << std::endl;
             grid.Set(mouseWorldPosFlooredX, mouseWorldPosFlooredY, c_valueToSet);
         }
 
@@ -192,17 +177,27 @@ int main() {
         static long c_tickCount = 0;
         if (g_options.stateTransitionTickDelay != 0 && (c_tickCount++) % g_options.stateTransitionTickDelay == 0) {
             auto updateStart = std::chrono::high_resolution_clock::now();
-            grid.NextState(g_options);
+
+            switch (g_options.automataType)
+            {
+            case AutomataType::GameOfLife: gameOfLifeKernel.Execute(); break;
+            case AutomataType::FallingSand: fallingSandKernel.Execute(IO::IsButtonDown(SDL_BUTTON_MIDDLE)); break;
+            default:
+                break;
+            }
+
             auto updateEnd = std::chrono::high_resolution_clock::now();
             g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
         }
         else
-            grid.Update();
+            grid.SyncFromHost();
 
         // Render and draw to screen
         auto renderStart = std::chrono::high_resolution_clock::now();
 
-        GridDisplay::DrawGrid(grid, g_options);
+        drawGridKernel.Execute(grid, g_options);
+        drawGridKernel.SyncAllFromDevice();
+
         IO::Render();
 
         auto renderEnd = std::chrono::high_resolution_clock::now();

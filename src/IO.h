@@ -1,5 +1,5 @@
 #pragma once
-#include "vec2.h"
+#include "utils/vec2.h"
 
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_sdl2.h"

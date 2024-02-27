@@ -1,5 +1,5 @@
 #pragma once
-#include "utils/Json.h"
+#include "Json.h"
 #include "vec2.h"
 
 // Structure representing a 2D camera with a position and zoom factor

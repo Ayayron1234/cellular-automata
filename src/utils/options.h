@@ -1,7 +1,7 @@
 #pragma once
 #include "vec2.h"
 #include "camera.h"
-#include "utils/ExternalResource.h"
+#include "ExternalResource.h"
 
 JSON_C(vec2, JSON_M(x), JSON_M(y))
 
