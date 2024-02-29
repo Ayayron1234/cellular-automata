@@ -4,6 +4,7 @@
 #include <curand_kernel.h>
 #include <utility>
 #include <stack>
+#include <stdlib.h>
 
 class GlobalObject {
 protected:
@@ -13,7 +14,7 @@ protected:
 		if (errorCode == cudaSuccess)
 			return;
 
-		std::cerr << "[GlobalReadWriteBuffer] " << function << " returned error code " << errorCode << ":\n\t" << cudaGetErrorString(errorCode) << std::endl;
+		std::cerr << "[GlobalObject] " << function << " returned error code " << errorCode << ":\n\t" << cudaGetErrorString(errorCode) << std::endl;
 		std::clog << "\tFile: "
 			<< location.file_name() << '('
 			<< location.line() << ':'
@@ -35,14 +36,16 @@ concept GlobalDataHandler_C = requires(T t) {
 template <typename T>
 class GlobalBuffer : public GlobalObject {
 public:
-	void SetUp(size_t count, T* buffer = nullptr) {
+	void Init(size_t count, T* buffer = nullptr, bool doFreeHostBuffer = true) {
 		if (m_deviceBuffer != nullptr)
 			CleanupDevice();
-		if (m_hostBuffer != nullptr)
+		if (doFreeHostBuffer && m_hostBuffer != nullptr)
 			delete[] m_hostBuffer;
 
-		if (buffer == nullptr)
+		if (buffer == nullptr) {
 			buffer = new T[count];
+			memset(buffer, 0, count * sizeof(T));
+		}
 
 		m_hostBuffer = buffer;
 		m_bufferSize = sizeof(T) * count;
@@ -77,6 +80,12 @@ public:
 		else
 			cudaStatus = cudaMemcpy(m_deviceBuffer, m_hostBuffer, Size(), cudaMemcpyHostToDevice);
 		checkErrorAndCleanup("cudaMemcpy", cudaStatus);
+	}
+
+	// Wait for the gpu to finish operations
+	void AwaitDevice() {
+		cudaError_t cudaStatus = cudaDeviceSynchronize();
+		checkError("cudaDeviceSynchronize", cudaStatus);
 	}
 
 	__host__ __device__
@@ -131,7 +140,7 @@ private:
 template <typename T>
 class GlobalReadWriteBuffer : public GlobalObject {
 public:
-	void SetUp(size_t count, T* buffer = nullptr) {
+	void Init(size_t count, T* buffer = nullptr) {
 		// Free allocated memory
 		if (m_deviceReadBuffer != nullptr && m_deviceWriteBuffer != nullptr)
 			CleanupDevice();
@@ -255,7 +264,7 @@ public:
 		checkError("cudaDeviceSynchronize", cudaStatus);
 	}
 
-	static void SyncAllFromDevice() {
+	static void SyncAllFromDevice(bool async = false) {
 		AwaitDevice();
 
 		while (!s_kernelsToSyncFromDevice.empty()) {
@@ -263,7 +272,8 @@ public:
 			s_kernelsToSyncFromDevice.pop();
 		}
 
-		AwaitDevice();
+		if (!async)
+			AwaitDevice();
 	}
 
 protected:

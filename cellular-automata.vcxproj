@@ -86,8 +86,6 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="src\kernels\falling_sand.cu" />
-    <CudaCompile Include="src\kernels\game_of_life.cu" />
     <CudaCompile Include="src\kernels\draw_grid.cu" />
   </ItemGroup>
   <ItemGroup>
@@ -103,13 +101,15 @@
     <ClInclude Include="dependencies\imgui\imstb_textedit.h" />
     <ClInclude Include="dependencies\imgui\imstb_truetype.h" />
     <CudaCompile Include="src\utils\camera.h" />
+    <ClInclude Include="src\cell.h" />
+    <ClInclude Include="src\cellular-storage.h" />
     <ClInclude Include="src\chunk_manager.h" />
     <ClInclude Include="src\device_helpers.h" />
     <CudaCompile Include="src\grid.h" />
     <ClInclude Include="src\kernels.h" />
     <ClInclude Include="src\utils.h" />
     <ClInclude Include="src\utils\ExternalResource.h" />
-    <ClInclude Include="src\IO.h" />
+    <ClInclude Include="src\utils\IO.h" />
     <ClInclude Include="src\utils\Json.h" />
     <CudaCompile Include="src\utils\vec2.h" />
   </ItemGroup>
@@ -127,8 +127,11 @@
     <CudaCompile Include="src\cellular-automata.cpp">
       <FileType>Document</FileType>
     </CudaCompile>
-    <ClCompile Include="src\IO.cpp" />
+    <ClCompile Include="src\utils\IO.cpp" />
     <CudaCompile Include="src\utils\options.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

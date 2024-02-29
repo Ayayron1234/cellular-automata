@@ -1,8 +1,9 @@
-#include "IO.h"
+#include "utils/IO.h"
 #include "utils.h"
 #include "device_helpers.h"
 #include "kernels.h"
 #include "grid.h"
+#include "cell.h"
 
 auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
 
@@ -30,11 +31,9 @@ void ShowPropertiesWindow() {
     ImGui::SeparatorText("State Transition Tick Delay:");
     ImGui::DragInt("##stateTransitionTickDelay", &g_options.stateTransitionTickDelay, 1, 0, 100);
 
-    // Display radio buttons to choose between Mandelbrot and Julia sets
-    ImGui::SeparatorText("Type:");
-    ImGui::RadioButton("Conway's Game of Life", (int*)&g_options.automataType, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Falling Sand", (int*)&g_options.automataType, 1);
+    // Display brush options
+    ImGui::SeparatorText("Brush:");
+    ImGui::Text("Size: "); ImGui::SameLine(); ImGui::DragInt("##brushSize", &g_options.brushSize, 1, 1, 32);
 
     // Display render and update durations
     ImGui::SeparatorText("Performance:");
@@ -42,6 +41,43 @@ void ShowPropertiesWindow() {
     ImGui::Text("Render: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_renderDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
 
     ImGui::End();
+}
+
+void UpdateCamera(vec2 mouseWorldPos, const Uint8* state, vec2 normalizedMousePos) {
+    // Reset camera when space is pressed
+    if (state[SDL_SCANCODE_SPACE]) {
+        g_options.camera.position = { 0, 0 };
+        g_options.camera.zoom = 1;
+    }
+
+    // Begin dragging if left mouse button is clicked
+    static vec2 c_dragStart;
+    static bool dragDisabled = false;
+    if (IO::MouseClicked(SDL_BUTTON_LEFT)) {
+        dragDisabled = g_propertiesWindowHovered;
+        c_dragStart = mouseWorldPos;
+    }
+
+    // Move camera while dragging
+    if (IO::IsButtonDown(SDL_BUTTON_LEFT) && !dragDisabled) {
+        g_options.camera.position = g_options.camera.position + (mouseWorldPos - c_dragStart);
+        //c_dragStart = mouseWorldPos;
+    }
+
+    // Handle zooming based on mouse wheel movement
+    static Float zoom = 1.L;
+    static Float zoomDP = 1.055;
+    static Float zoomDN = 1.055;
+    if (IO::GetMouseWheel() > 0)
+        zoom = zoomDP;
+    else if (IO::GetMouseWheel() < 0)
+        zoom = 1.L / zoomDN;
+
+    // Update properties considering zoom level and smooth zoom decrease
+    if (abs(zoom - 1.L) > 0.0001f)
+        g_options.camera.position = g_options.camera.position - 0.5L * normalizedMousePos / g_options.camera.zoom + 0.5L * normalizedMousePos / (g_options.camera.zoom * zoom);
+    g_options.camera.zoom *= zoom;
+    zoom = 1.L + (zoom - 1.L) * 0.75L;
 }
 
 /**
@@ -97,18 +133,53 @@ void HandleDroppedFile(const std::wstring& path) {
     delete[] charPath;
 }
 
+void UpdateGrid(Grid<Cell>& grid) {
+    bool evenTick = IO::GetTicks() % 2;
+
+    for (int i = 0; i < grid.Width() * grid.Height(); ++i) {
+        int x = i % grid.Width();
+        int y = i / grid.Width();
+
+        Cell cell = grid.Get(x, y);
+
+        if (cell.type == 0 || cell.updatedOnEven == evenTick) {
+            cell.updatedOnEven = evenTick;
+            grid.Set(x, y, cell);
+            continue;
+        }
+        cell.updatedOnEven = evenTick;
+
+        if (grid.Get(x, y + 1, { evenTick, 1 }).type == 0) {
+            grid.Set(x, y + 1, { evenTick, cell.type });
+            grid.Set(x, y, { false, 0 });
+            continue;
+        }
+
+        char displacement = (rand() % 2) * 2 - 1;
+        if (grid.Get(x + displacement, y + 1, { evenTick, 1 }).type == 0) {
+            grid.Set(x + displacement, y + 1, { evenTick, cell.type });
+            grid.Set(x, y, { false, 0 });
+            continue;
+        }
+
+        if (grid.Get(x - displacement, y + 1, { evenTick, 1 }).type == 0) {
+            grid.Set(x - displacement, y + 1, { evenTick, cell.type });
+            grid.Set(x, y, { false, 0 });
+            continue;
+        }
+    }
+}
+
 int main() {
     IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
 
-    Grid<int> grid(128, 128);
+    Grid<Cell> grid(1024, 1024);
     grid.Load("grid.bin");
 
     GlobalBuffer<IO::RGB> outputBuffer;
-    outputBuffer.SetUp(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer());
+    outputBuffer.Init(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer());
 
-    auto fallingSandKernel = Kernel(fallingSand, &grid);
-    auto gameOfLifeKernel = Kernel(gameOfLife, &grid);
-    auto drawGridKernel = Kernel(drawGrid, &outputBuffer);
+    auto rendererKernel = Kernel(drawGrid, &outputBuffer);
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
@@ -119,84 +190,66 @@ int main() {
         vec2 normalizedMousePos = IO::NormalizePixel((int)IO::GetMousePos().x, (int)IO::GetMousePos().y);
         vec2 mouseWorldPos = normalizedMousePos / 2 / g_options.camera.zoom - g_options.camera.position;
 
+        // Resize buffer when window resized
+        if (IO::Resized())
+            outputBuffer.Init(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer(), false);
+
         // Draw GUI
         ShowPropertiesWindow();
 
-        // Reset camera when space is pressed
         const Uint8* state = SDL_GetKeyboardState(nullptr);
-        if (state[SDL_SCANCODE_SPACE]) {
-            g_options.camera.position = { 0, 0 };
-            g_options.camera.zoom = 1;
-        }
+        UpdateCamera(mouseWorldPos, state, normalizedMousePos);
 
-        // Begin dragging if left mouse button is clicked
-        static vec2 dragStart;
-        static bool dragDisabled = false;
-        if (IO::MouseClicked(SDL_BUTTON_LEFT)) {
-            dragDisabled = g_propertiesWindowHovered;
-            dragStart = mouseWorldPos;
-        }
-
-        // Update fractal property during mouse drag (if dragging is allowed)
-        if (IO::IsButtonDown(SDL_BUTTON_LEFT) && !dragDisabled) {
-            g_options.camera.position = (mouseWorldPos - dragStart);
-        }
-
-        static int c_valueToSet = 1;
-        if (state[SDL_SCANCODE_1])
+        static unsigned int c_valueToSet = 1;
+        static unsigned int c_valueBeforeClearStart = 1;
+        if (IO::IsKeyDown(SDL_SCANCODE_1))
             c_valueToSet = 1;
-        if (state[SDL_SCANCODE_2])
+        if (IO::IsKeyDown(SDL_SCANCODE_2))
             c_valueToSet = 2;
 
         int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
         int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
-        if (IO::MouseClicked(SDL_BUTTON_RIGHT)) {
-            c_valueToSet = (grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY) == 0) ? c_valueToSet : 0;
+        if (IO::MouseClicked(SDL_BUTTON_RIGHT) && grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type != 0) {
+            std::cout << grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type << std::endl;
+            c_valueBeforeClearStart = c_valueToSet;
+            c_valueToSet = 0;
         }
+        if (IO::MouseReleased(SDL_BUTTON_RIGHT) && c_valueToSet == 0)
+            c_valueToSet = c_valueBeforeClearStart;
+
+        int& brushSize = g_options.brushSize;
         if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && !g_propertiesWindowHovered) {
-            std::cout << c_valueToSet << std::endl;
-            grid.Set(mouseWorldPosFlooredX, mouseWorldPosFlooredY, c_valueToSet);
+            int x = mouseWorldPosFlooredX - brushSize / 2;
+            int y = mouseWorldPosFlooredY - brushSize / 2;
+            for (int i = 0; i < brushSize * brushSize; ++i) {
+                int dX = i % brushSize;
+                int dY = i / brushSize;
+
+                float distance = length(vec2(x + dX, y + dY) - vec2(x + brushSize / 2, y + brushSize / 2));
+                if (distance < brushSize / 2)
+                    grid.Set(x + dX, y + dY, { false, c_valueToSet });
+            }
         }
 
-        // Handle zooming based on mouse wheel movement
-        static Float zoom = 1.L;
-        static Float zoomDP = 1.055;
-        static Float zoomDN = 1.055;
-        if (IO::GetMouseWheel() > 0)
-            zoom = zoomDP;
-        else if (IO::GetMouseWheel() < 0)
-            zoom = 1.L / zoomDN;
-
-        // Update properties considering zoom level and smooth zoom decrease
-        if (abs(zoom - 1.L) > 0.0001f)
-            g_options.camera.position = g_options.camera.position - 0.5L * normalizedMousePos / g_options.camera.zoom + 0.5L * normalizedMousePos / (g_options.camera.zoom * zoom);
-        g_options.camera.zoom *= zoom;
-        zoom = 1.L + (zoom - 1.L) * 0.75L;
-
-        // Invoke CUDA function for Mandelbrot set computation
+        // Invoke CUDA function
         static long c_tickCount = 0;
         if (g_options.stateTransitionTickDelay != 0 && (c_tickCount++) % g_options.stateTransitionTickDelay == 0) {
             auto updateStart = std::chrono::high_resolution_clock::now();
 
-            switch (g_options.automataType)
-            {
-            case AutomataType::GameOfLife: gameOfLifeKernel.Execute(); break;
-            case AutomataType::FallingSand: fallingSandKernel.Execute(IO::IsButtonDown(SDL_BUTTON_MIDDLE)); break;
-            default:
-                break;
-            }
+            UpdateGrid(grid);
+            grid.UpdateState();
 
             auto updateEnd = std::chrono::high_resolution_clock::now();
             g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
         }
         else
-            grid.SyncFromHost();
+            grid.UpdateState();
 
         // Render and draw to screen
         auto renderStart = std::chrono::high_resolution_clock::now();
 
-        drawGridKernel.Execute(grid, g_options);
-        drawGridKernel.SyncAllFromDevice();
+        rendererKernel.Execute(grid, g_options);
+        rendererKernel.SyncAllFromDevice(true);
 
         IO::Render();
 

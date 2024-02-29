@@ -2,6 +2,7 @@
 #include <iostream>
 #include "utils/options.h"
 #include "device_helpers.h"
+#include "cellular-storage.h"
 
 template <typename T>
 class Grid {
@@ -12,7 +13,9 @@ public:
         : m_width(width)
         , m_height(height)
     {
-        m_buffer.SetUp(width * height, buffer);
+        //m_hostBuffer.Init(width * height, buffer);
+        //m_globalBuffer.Init(width * height, m_hostBuffer.GetWriteBuffer(), false);
+        m_globalBuffer.Init(width * height, buffer);
     }
 
     __host__ __device__
@@ -20,7 +23,12 @@ public:
         if (!(0 <= x && x < m_width && 0 <= y && y < m_height))
             return;
 
-        m_buffer.Write(y * Width() + x, value);
+        //#ifndef __CUDA_ARCH__
+        //return m_hostBuffer.Write(y * Width() + x, value);
+        //#else
+        //return m_globalBuffer.Write(y * Width() + x, value);
+        //#endif
+        m_globalBuffer.Write(y * Width() + x, value);
     }
 
     __host__ __device__
@@ -28,24 +36,19 @@ public:
         if (!(0 <= x && x < m_width && 0 <= y && y < m_height))
             return outerValue;
 
-        return m_buffer.Read(y * m_width + x);
+        //#ifndef __CUDA_ARCH__
+        //return m_hostBuffer.Read(y * m_width + x);
+        //#else
+        //return m_globalBuffer.Read(y * m_width + x);
+        //#endif
+        return m_globalBuffer.Read(y * m_width + x);
     }
 
-    void NextState(Options options) {
-        m_buffer.SyncFromHost();
-
-        advanceState(options);
-
-        m_buffer.AwaitDevice();
-        m_buffer.SyncFromDevice();
-    }
-
-    void SyncFromHost(bool async = false) {
-        m_buffer.SyncFromHost(async);
-    }
-
-    void SyncFromDevice(bool async = false) {
-        m_buffer.SyncFromDevice(async);
+    void UpdateState() {
+        //m_globalBuffer.SyncFromHost(false);
+        //m_hostBuffer.Sync();
+        //m_globalBuffer.AwaitDevice();
+        m_globalBuffer.SyncFromHost(true);
     }
 
     __host__ __device__
@@ -68,7 +71,7 @@ public:
         ofs.write((char*)&m_width, sizeof(m_width));
         ofs.write((char*)&m_height, sizeof(m_height));
 
-        ofs.write((char*)&m_buffer.Read(0), Width() * Height() * sizeof(T));
+        ofs.write((char*)&m_globalBuffer.Read(0), Width() * Height() * sizeof(T));
     }
 
     void Load(const char* path) {
@@ -84,14 +87,14 @@ public:
         cell_t* buffer = new cell_t[Width() * Height()];
         ifs.read((char*)buffer, Width() * Height() * sizeof(cell_t));
 
-        m_buffer.SetUp(Width() * Height(), buffer);
+        //m_hostBuffer.Init(Width() * Height(), buffer);
+        //m_globalBuffer.Init(Width() * Height(), m_hostBuffer.GetWriteBuffer(), false);
+        m_globalBuffer.Init(Width() * Height(), buffer);
     }
 
 private:
     int m_width, m_height;
-    GlobalBuffer<cell_t> m_buffer{};
-    //GlobalReadWriteBuffer<cell_t> m_buffer{};
-   
-    void advanceState(Options options);
+    //ReadWriteBuffer<cell_t> m_hostBuffer{};
+    GlobalBuffer<cell_t> m_globalBuffer{};
 
 };
