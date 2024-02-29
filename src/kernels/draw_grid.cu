@@ -1,9 +1,9 @@
 #include "../kernels.h"   
 #include <curand_kernel.h>
-#include "../IO.h"
+#include "../utils/IO.h"
 
 __global__
-void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, Options options, Grid<int> grid) {
+void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, Options options, Grid<Cell> grid) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int i = row * options.windowWidth + col;
@@ -14,7 +14,7 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, Options options, Grid<int> grid
 
     int x = floor(x0), y = floor(y0);
 
-    int val = grid.Get(x, y);
+    unsigned int val = grid.Get(x, y, {false, 1}).type;
     IO::RGB color;
     if (val == 1)
         color = { (char)191, (char)174, (char)111 };
@@ -24,7 +24,7 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, Options options, Grid<int> grid
     pixelBuffer.Write(i, color);
 }
 
-void drawGrid(GlobalBuffer<IO::RGB> pixelBuffer, Grid<int> grid, Options options) {
+void drawGrid(GlobalBuffer<IO::RGB> pixelBuffer, Grid<Cell> grid, Options options) {
     dim3 block_size(32, 32);
     dim3 grid_size(options.windowWidth / block_size.x, options.windowHeight / block_size.y);
 

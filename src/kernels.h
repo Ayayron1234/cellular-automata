@@ -1,10 +1,7 @@
 #pragma once
 #include "grid.h"
 #include "utils.h"
-#include "IO.h"
+#include "utils/IO.h"
+#include "cell.h"
 
-void gameOfLife(Grid<int> grid);
-
-void fallingSand(Grid<int> grid, bool pipes = false);
-
-void drawGrid(GlobalBuffer<IO::RGB> pixelBuffer, Grid<int> grid, Options options);
+void drawGrid(GlobalBuffer<IO::RGB> pixelBuffer, Grid<Cell> grid, Options options);
