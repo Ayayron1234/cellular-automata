@@ -15,6 +15,9 @@ struct RGB {
 	char g = 0;
 	char b = 0;
 	char a = 0;
+
+	__host__ __device__
+	RGB(int _r = 0, int _g = 0, int _b = 0, int _a = 1) : r(_r), g(_g), b(_b), a(_a) { }
 }; 
 
 void Render();

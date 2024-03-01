@@ -22,18 +22,33 @@ void ShowPropertiesWindow() {
 
     // Initialize window state and set its size
     bool isWindowOpen = true;
-    ImGui::Begin("Properties", &isWindowOpen, ImGuiWindowFlags_NoResize);
-    ImGui::SetWindowSize({ 256 , 216 });
+    bool c_initedSize = false;
+    ImGui::Begin("Properties", &isWindowOpen, (c_initedSize) ? ImGuiWindowFlags_NoResize : 0);
+    ImGui::SetWindowSize({ 0 , 0 });
+    c_initedSize = true;
 
     // Check if the properties window is hovered
     g_propertiesWindowHovered = ImGui::IsWindowHovered();
 
-    ImGui::SeparatorText("State Transition Tick Delay:");
-    ImGui::DragInt("##stateTransitionTickDelay", &g_options.stateTransitionTickDelay, 1, 0, 100);
+    ImGui::SeparatorText("Simulation Speed:");
+    ImGui::Text("Enabled: "); ImGui::SameLine(); ImGui::Checkbox("##simulationEnableCheckBox", &g_options.simulationEnabled);
+    ImGui::Text("Simulation step delay: "); ImGui::DragInt("##stateTransitionTickDelay", &g_options.stateTransitionTickDelay, sqrtf(g_options.stateTransitionTickDelay) / 3.f, 1, 250, "%d tick(s)");
+    static int c_tickDelayBeforeDisable = 1;
+    static bool c_disabled = false;
+    if (!g_options.simulationEnabled) {
+        if (!c_disabled)
+            c_tickDelayBeforeDisable = g_options.stateTransitionTickDelay;
+        c_disabled = true;
+        g_options.stateTransitionTickDelay = 0;
+    } 
+    else if (c_disabled) {
+        c_disabled = false;
+        g_options.stateTransitionTickDelay = c_tickDelayBeforeDisable ? c_tickDelayBeforeDisable : 1;
+    }
 
     // Display brush options
     ImGui::SeparatorText("Brush:");
-    ImGui::Text("Size: "); ImGui::SameLine(); ImGui::DragInt("##brushSize", &g_options.brushSize, 1, 1, 32);
+    ImGui::Text("Size: "); ImGui::SameLine(); ImGui::DragInt("##brushSize", &g_options.brushSize, 1, 1, 64);
 
     // Display render and update durations
     ImGui::SeparatorText("Performance:");
@@ -133,12 +148,16 @@ void HandleDroppedFile(const std::wstring& path) {
     delete[] charPath;
 }
 
+int g_simulationStepCount = 0;
 void UpdateGrid(Grid<Cell>& grid) {
-    bool evenTick = IO::GetTicks() % 2;
-
-    for (int i = 0; i < grid.Width() * grid.Height(); ++i) {
-        int x = i % grid.Width();
-        int y = i / grid.Width();
+    bool evenTick = (g_simulationStepCount++) % 2;
+    for (int _x = rand() % 3; _x < grid.Width() * 3; _x += 3)
+    for (int _y = grid.Height() - 1; _y >= 0; --_y)
+    //for (int _y = 0; _y < grid.Height() * 3; _y += 3)
+    {
+        int x = _x % grid.Width();
+        //int y = _y % grid.Height();
+        int y = _y;
 
         Cell cell = grid.Get(x, y);
 
@@ -149,28 +168,75 @@ void UpdateGrid(Grid<Cell>& grid) {
         }
         cell.updatedOnEven = evenTick;
 
-        if (grid.Get(x, y + 1, { evenTick, 1 }).type == 0) {
-            grid.Set(x, y + 1, { evenTick, cell.type });
-            grid.Set(x, y, { false, 0 });
-            continue;
-        }
+        Cell destination;
+        if (cell.type == 1) {
+            destination = grid.Get(x, y + 1, { evenTick, 1 });
+            if (destination.type == 0 || destination.type == 2) {
+                grid.Set(x, y + 1, { evenTick, cell.type });
+                destination.updatedOnEven = evenTick;
+                grid.Set(x, y, destination);
+                continue;
+            }
 
-        char displacement = (rand() % 2) * 2 - 1;
-        if (grid.Get(x + displacement, y + 1, { evenTick, 1 }).type == 0) {
-            grid.Set(x + displacement, y + 1, { evenTick, cell.type });
-            grid.Set(x, y, { false, 0 });
-            continue;
-        }
+            char displacement = evenTick * 2 - 1;
+            destination = grid.Get(x + displacement, y + 1, { evenTick, 1 });
+            if (destination.type == 0 || destination.type == 2) {
+                grid.Set(x + displacement, y + 1, { evenTick, cell.type });
+                destination.updatedOnEven = evenTick;
+                grid.Set(x, y, destination);
+                continue;
+            }
 
-        if (grid.Get(x - displacement, y + 1, { evenTick, 1 }).type == 0) {
-            grid.Set(x - displacement, y + 1, { evenTick, cell.type });
-            grid.Set(x, y, { false, 0 });
-            continue;
+            destination = grid.Get(x - displacement, y + 1, { evenTick, 1 });
+            if (destination.type == 0 || destination.type == 2) {
+                grid.Set(x - displacement, y + 1, { evenTick, cell.type });
+                destination.updatedOnEven = evenTick;
+                grid.Set(x, y, destination);
+                continue;
+            }
+        }
+        else if (cell.type == 2) {
+            if (grid.Get(x, y + 1, { evenTick, 1 }).type == 0) {
+                grid.Set(x, y + 1, { evenTick, cell.type });
+                grid.Set(x, y, { evenTick, 0 });
+                continue;
+            }
+
+            //char displacement = evenTick * 2 - 1;
+            char displacement = cell.waterDirection * 2 - 1;
+            bool displacement2 = evenTick;
+            if (grid.Get(x + displacement, y + displacement2, { evenTick, 1 }).type == 0) {
+                grid.Set(x + displacement, y + displacement2, { evenTick, cell.type, cell.waterDirection });
+                grid.Set(x, y, { evenTick, 0 });
+                continue;
+            }
+
+            //if (grid.Get(x - displacement, y + displacement2, { evenTick, 1 }).type == 0) {
+            //    grid.Set(x - displacement, y + displacement2, { evenTick, cell.type, cell.waterDirection });
+            //    grid.Set(x, y, { evenTick, 0 });
+            //    continue;
+            //}
+
+            if (grid.Get(x + displacement, y + !displacement2, { evenTick, 1 }).type == 0) {
+                grid.Set(x + displacement, y + !displacement2, { evenTick, cell.type, cell.waterDirection });
+                grid.Set(x, y, { evenTick, 0 });
+                continue;
+            }
+
+            //if (grid.Get(x - displacement, y + !displacement2, { evenTick, 1 }).type == 0) {
+            //    grid.Set(x - displacement, y + !displacement2, { evenTick, cell.type, cell.waterDirection });
+            //    grid.Set(x, y, { evenTick, 0 });
+            //    continue;
+            //}
+
+            grid.Set(x, y, { evenTick, cell.type, !cell.waterDirection });
         }
     }
 }
 
 int main() {
+    std::cout << sizeof(Cell) << std::endl;
+
     IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
 
     Grid<Cell> grid(1024, 1024);
@@ -200,8 +266,8 @@ int main() {
         const Uint8* state = SDL_GetKeyboardState(nullptr);
         UpdateCamera(mouseWorldPos, state, normalizedMousePos);
 
-        static unsigned int c_valueToSet = 1;
-        static unsigned int c_valueBeforeClearStart = 1;
+        static short unsigned int c_valueToSet = 1;
+        static short unsigned int c_valueBeforeClearStart = 1;
         if (IO::IsKeyDown(SDL_SCANCODE_1))
             c_valueToSet = 1;
         if (IO::IsKeyDown(SDL_SCANCODE_2))
@@ -233,7 +299,7 @@ int main() {
 
         // Invoke CUDA function
         static long c_tickCount = 0;
-        if (g_options.stateTransitionTickDelay != 0 && (c_tickCount++) % g_options.stateTransitionTickDelay == 0) {
+        if (g_options.stateTransitionTickDelay != 0 && (IO::GetTicks()) % g_options.stateTransitionTickDelay == 0) {
             auto updateStart = std::chrono::high_resolution_clock::now();
 
             UpdateGrid(grid);

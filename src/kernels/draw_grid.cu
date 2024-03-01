@@ -18,8 +18,14 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, Options options, Grid<Cell> gri
     IO::RGB color;
     if (val == 1)
         color = { (char)191, (char)174, (char)111 };
-    else if (val == 2)
-        color = { (char)75, (char)147, (char)189 };
+    else if (val == 2) {
+        //if (grid.Get(x + 1, y).type == 0 || grid.Get(x - 1, y).type == 0)
+        //    color = IO::RGB();
+        //else if (grid.Get(x, y - 1).type == 0)
+        //    color = IO::RGB( 98, 152, 163 );
+        //else
+            color = IO::RGB(54, 124, 138 );
+    }
 
     pixelBuffer.Write(i, color);
 }
