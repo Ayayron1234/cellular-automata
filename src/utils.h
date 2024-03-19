@@ -4,6 +4,8 @@
 #include "utils/camera.h"
 #include "utils/options.h"
 #include "utils/ExternalResource.h"
+#include "utils/IO.h"
+#include "utils/bitmap.h"
 
 #include <chrono>
 
