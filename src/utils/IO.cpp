@@ -142,7 +142,7 @@ void OpenWindow(int width, int height) {
 	// Init SDL and open a window
 	SDL_Init(SDL_INIT_EVERYTHING);
 
-	SDL.window = SDL_CreateWindow("GPGPU", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SDL.windowWidth, SDL.windowHeight, SDL_WINDOW_RESIZABLE);
+	SDL.window = SDL_CreateWindow("GPGPU", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SDL.windowWidth, SDL.windowHeight, SDL_WINDOW_RESIZABLE | SDL_RENDERER_ACCELERATED);
 	SDL.renderer = SDL_CreateRenderer(SDL.window, -1, SDL_RENDERER_ACCELERATED);
 
 	// Init keyboard state
@@ -177,6 +177,47 @@ bool Resized() {
 	return SDL.didResize;
 }
 
+void SetWindowMode(WindowMode mode) {
+	auto flags = SDL_GetWindowFlags(SDL.window);
+
+	switch (mode)
+	{
+	case IO::WindowMode::Windowed:
+		SDL_SetWindowFullscreen(SDL.window, ~SDL_WINDOW_FULLSCREEN & flags);
+		break;
+	case IO::WindowMode::FullscreenWindowed:
+		SDL_SetWindowFullscreen(SDL.window, SDL_WINDOW_FULLSCREEN_DESKTOP | flags);
+		break;
+	case IO::WindowMode::Fullscreen:
+		SDL_SetWindowFullscreen(SDL.window, SDL_WINDOW_FULLSCREEN | flags);
+		break;
+	default:
+		break;
+	}
+}
+
+WindowMode GetWindowMode() {
+	auto flags = SDL_GetWindowFlags(SDL.window);
+
+	if ((flags & SDL_WINDOW_FULLSCREEN) == 0u)
+		return IO::WindowMode::Windowed;
+
+	if ((flags & 0x00001000) == 0u)
+		return IO::WindowMode::FullscreenWindowed;
+
+	return IO::WindowMode::Fullscreen;
+}
+
+void ToggleFullscreen() {
+	static WindowMode c_modeBeforeWindowed = WindowMode::FullscreenWindowed;
+
+	if (GetWindowMode() == WindowMode::Windowed)
+		SetWindowMode(c_modeBeforeWindowed);
+
+	c_modeBeforeWindowed = GetWindowMode();
+	SetWindowMode(WindowMode::Windowed);
+}
+
 bool IsButtonDown(uint8_t button) {
 	button = (1u << button);
 	return (SDL.mouseButtons & button) == button;
@@ -206,6 +247,10 @@ bool KeyReleased(uint8_t key) {
 
 vec2 NormalizePixel(int x, int y) {
 	return { (2.f * x) / (Float)SDL.windowWidth - 1.f, ((2.f * y) / (Float)SDL.windowHeight - 1.f) };
+}
+
+vec2 NormalizePixel(vec2 pos) {
+	return { (2.f * pos.x) / (Float)SDL.windowWidth - 1.f, ((2.f * pos.y) / (Float)SDL.windowHeight - 1.f) };
 }
 
 vec2 GetMousePos() {
@@ -245,6 +290,12 @@ const std::wstring& GetDroppedFilePath() {
 void ResizeWindow(int width, int height) {
 	SDL.output.resize(width, height);
 	SDL_SetWindowSize(SDL.window, width, height);
+}
+
+void DrawRect(int x, int y, int w, int h, RGB color) {
+	SDL_SetRenderDrawColor(SDL.renderer, color.r, color.g, color.b, color.a);
+	SDL_Rect rect{ x, y, w, h };
+	SDL_RenderDrawRect(SDL.renderer, &rect);
 }
 
 inline SDL_Instance& SDL {

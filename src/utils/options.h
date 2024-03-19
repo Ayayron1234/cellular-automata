@@ -13,7 +13,8 @@ struct Options {
     Camera camera{ vec2(), 0.01 };             // Camera configuration with default values
 
     bool simulationEnabled = true;
-    int stateTransitionTickDelay = 50;
+    int stateTransitionTickDelay = 1;
 
-    int brushSize = 1;
+    int brushSize = 12;
+    bool showChunkBorders = false;
 }; JSON_C(Options, JSON_M(windowWidth), JSON_M(windowHeight), JSON_M(camera), JSON_M(stateTransitionTickDelay), JSON_M(brushSize), JSON_M(simulationEnabled))

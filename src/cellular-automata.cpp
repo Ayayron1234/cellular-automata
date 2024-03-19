@@ -1,11 +1,9 @@
 #include "utils/IO.h"
 #include "utils.h"
-#include "device_helpers.h"
-#include "kernels.h"
-#include "grid.h"
-#include "cell.h"
+#include "simulation.h"
+#include "device.h"
 
-auto& g_options = external_resource<"options.json", Json::wrap<Options>>::value;
+auto& g_options = external_resource<"data/options.json", Json::wrap<Options>>::value;
 
 bool g_doShowPropertiesWindow = true;
 bool g_propertiesWindowHovered = false;
@@ -40,11 +38,14 @@ void ShowPropertiesWindow() {
             c_tickDelayBeforeDisable = g_options.stateTransitionTickDelay;
         c_disabled = true;
         g_options.stateTransitionTickDelay = 0;
-    } 
+    }
     else if (c_disabled) {
         c_disabled = false;
         g_options.stateTransitionTickDelay = c_tickDelayBeforeDisable ? c_tickDelayBeforeDisable : 1;
     }
+
+    // Show chunk borders
+    ImGui::Text("Chunk borders:"); ImGui::SameLine(); ImGui::Checkbox("##showChunkBorders", &g_options.showChunkBorders);
 
     // Display brush options
     ImGui::SeparatorText("Brush:");
@@ -54,6 +55,12 @@ void ShowPropertiesWindow() {
     ImGui::SeparatorText("Performance:");
     ImGui::Text("Update: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_updateDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
     ImGui::Text("Render: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_renderDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
+
+    // Display mouse position
+    std::stringstream mousePosSStream;
+    auto mousePos = g_options.camera.screenToWorld(IO::GetWindowWidth(), IO::GetWindowHeight(), IO::GetMousePos());
+    mousePosSStream << "Mouse position: {" << mousePos.x << "," << mousePos.y << "}";
+    ImGui::Text(mousePosSStream.str().c_str());
 
     ImGui::End();
 }
@@ -149,103 +156,118 @@ void HandleDroppedFile(const std::wstring& path) {
 }
 
 int g_simulationStepCount = 0;
-void UpdateGrid(Grid<Cell>& grid) {
-    bool evenTick = (g_simulationStepCount++) % 2;
-    for (int _x = rand() % 3; _x < grid.Width() * 3; _x += 3)
-    for (int _y = grid.Height() - 1; _y >= 0; --_y)
-    //for (int _y = 0; _y < grid.Height() * 3; _y += 3)
+void UpdateChunk(Options options, Chunk& chunk) {
+    using namespace SimValues;
+
+    int x0 = chunk.getFirstCellCoord().x, y0 = chunk.getFirstCellCoord().y;
+
+    bool evenTick = (g_simulationStepCount) % 2;
+    char step = rand() % 2 == 0 ? 3 : 5;
+    for (int _x = rand() % step; _x < CHUNK_SIZE * step; _x += step)
+    for (int _y = 0; _y < CHUNK_SIZE; ++_y)
+    //for (int _y = CHUNK_SIZE - 1; _y >= 0; --_y)
     {
-        int x = _x % grid.Width();
-        //int y = _y % grid.Height();
-        int y = _y;
+        int x = x0 + (_x % CHUNK_SIZE);
+        int y = y0 + _y;
 
-        Cell cell = grid.Get(x, y);
+        Cell cell = chunk.getCell(x, y);
 
-        if (cell.type == 0 || cell.updatedOnEven == evenTick) {
-            cell.updatedOnEven = evenTick;
-            grid.Set(x, y, cell);
+        if (cell.type == Cell::Type::AIR || cell.updatedOnEvenTick == evenTick) {
+            //cell.updatedOnEvenTick = evenTick;
+            //chunk.setCell(x, y, cell);
             continue;
         }
-        cell.updatedOnEven = evenTick;
 
-        Cell destination;
-        if (cell.type == 1) {
-            destination = grid.Get(x, y + 1, { evenTick, 1 });
-            if (destination.type == 0 || destination.type == 2) {
-                grid.Set(x, y + 1, { evenTick, cell.type });
-                destination.updatedOnEven = evenTick;
-                grid.Set(x, y, destination);
+        if (cell.type == Cell::Type::SAND) {
+            CellCoord destination(x, y + 1);
+
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
                 continue;
             }
 
             char displacement = evenTick * 2 - 1;
-            destination = grid.Get(x + displacement, y + 1, { evenTick, 1 });
-            if (destination.type == 0 || destination.type == 2) {
-                grid.Set(x + displacement, y + 1, { evenTick, cell.type });
-                destination.updatedOnEven = evenTick;
-                grid.Set(x, y, destination);
+            destination.x += displacement;
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
                 continue;
             }
 
-            destination = grid.Get(x - displacement, y + 1, { evenTick, 1 });
-            if (destination.type == 0 || destination.type == 2) {
-                grid.Set(x - displacement, y + 1, { evenTick, cell.type });
-                destination.updatedOnEven = evenTick;
-                grid.Set(x, y, destination);
+            destination.x -= 2 * displacement;
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
                 continue;
             }
-        }
-        else if (cell.type == 2) {
-            if (grid.Get(x, y + 1, { evenTick, 1 }).type == 0) {
-                grid.Set(x, y + 1, { evenTick, cell.type });
-                grid.Set(x, y, { evenTick, 0 });
-                continue;
-            }
+        } 
 
-            //char displacement = evenTick * 2 - 1;
-            char displacement = cell.waterDirection * 2 - 1;
-            bool displacement2 = evenTick;
-            if (grid.Get(x + displacement, y + displacement2, { evenTick, 1 }).type == 0) {
-                grid.Set(x + displacement, y + displacement2, { evenTick, cell.type, cell.waterDirection });
-                grid.Set(x, y, { evenTick, 0 });
+        if (cell.type == Cell::Type::WATER) {
+            CellCoord destination(x, y + 1);
+
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
                 continue;
             }
 
-            //if (grid.Get(x - displacement, y + displacement2, { evenTick, 1 }).type == 0) {
-            //    grid.Set(x - displacement, y + displacement2, { evenTick, cell.type, cell.waterDirection });
-            //    grid.Set(x, y, { evenTick, 0 });
-            //    continue;
-            //}
-
-            if (grid.Get(x + displacement, y + !displacement2, { evenTick, 1 }).type == 0) {
-                grid.Set(x + displacement, y + !displacement2, { evenTick, cell.type, cell.waterDirection });
-                grid.Set(x, y, { evenTick, 0 });
+            char displacement = evenTick * 2 - 1;
+            destination.x += displacement;
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
                 continue;
             }
 
-            //if (grid.Get(x - displacement, y + !displacement2, { evenTick, 1 }).type == 0) {
-            //    grid.Set(x - displacement, y + !displacement2, { evenTick, cell.type, cell.waterDirection });
-            //    grid.Set(x, y, { evenTick, 0 });
-            //    continue;
-            //}
+            destination.x -= 2 * displacement;
+            if (chunk.getCell(destination).isLighter(cell)) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
+                continue;
+            }
 
-            grid.Set(x, y, { evenTick, cell.type, !cell.waterDirection });
+            destination.y = y;
+            int directionVec = (int)cell.water.direction * 2 - 1;
+            destination.x = x + directionVec;
+
+            for (destination.x = x + directionVec; chunk.getCell(destination).isLighter(cell) && abs(destination.x - x) < 7; destination.x += directionVec) { }
+            destination.x -= directionVec;
+
+            if (destination.x != x) {
+                chunk.swapCells({ x, y }, destination);
+                chunk.markCellAsUpdated(destination, evenTick);
+                continue;
+            }
+            
+            cell.updatedOnEvenTick = evenTick;
+            cell.water.direction += 1;
+            chunk.setCell({ x, y }, cell);
         }
     }
 }
 
 int main() {
-    std::cout << sizeof(Cell) << std::endl;
+    std::string worldPath = "data/worlds/test";
+    if (worldPath.empty()) {
+        std::cout << "World name: ";
+        std::stringstream worldPathStream;
+        worldPathStream << "data/worlds/";
+        std::string worldName;
+        std::cin >> worldName;
+        worldPathStream << worldName;
+        worldPath = worldPathStream.str();
+    }
 
     IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
 
-    Grid<Cell> grid(1024, 1024);
-    grid.Load("grid.bin");
+    World world;
+    world.load(worldPath);
 
-    GlobalBuffer<IO::RGB> outputBuffer;
-    outputBuffer.Init(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer());
+    auto rendererKernel = Kernel(drawWorld, new GlobalBuffer<IO::RGB>(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight()));
 
-    auto rendererKernel = Kernel(drawGrid, &outputBuffer);
+    Bitmap colorPaletteBitmap("data/color_palett.bmp");
+    ColorPalette colorPalette(colorPaletteBitmap);
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
@@ -254,33 +276,29 @@ int main() {
         g_options.windowWidth = IO::GetWindowWidth();
         g_options.windowHeight = IO::GetWindowHeight();
         vec2 normalizedMousePos = IO::NormalizePixel((int)IO::GetMousePos().x, (int)IO::GetMousePos().y);
-        vec2 mouseWorldPos = normalizedMousePos / 2 / g_options.camera.zoom - g_options.camera.position;
-
-        // Resize buffer when window resized
-        if (IO::Resized())
-            outputBuffer.Init(IO::GetWindowWidth() * IO::GetWindowHeight(), IO::GetOutputBuffer(), false);
-
-        // Draw GUI
-        ShowPropertiesWindow();
+        vec2 mouseWorldPos = g_options.camera.screenToWorld(IO::GetWindowWidth(), IO::GetWindowHeight(), IO::GetMousePos());
+        //vec2 mouseWorldPos = normalizedMousePos / 2 / g_options.camera.zoom - g_options.camera.position;
 
         const Uint8* state = SDL_GetKeyboardState(nullptr);
         UpdateCamera(mouseWorldPos, state, normalizedMousePos);
 
-        static short unsigned int c_valueToSet = 1;
-        static short unsigned int c_valueBeforeClearStart = 1;
+        static Cell::Type c_valueToSet = Cell::Type::SAND;
+        static Cell::Type c_valueBeforeClearStart = Cell::Type::SAND;
         if (IO::IsKeyDown(SDL_SCANCODE_1))
-            c_valueToSet = 1;
+            c_valueToSet = Cell::Type::SAND;
         if (IO::IsKeyDown(SDL_SCANCODE_2))
-            c_valueToSet = 2;
+            c_valueToSet = Cell::Type::WATER;
+        if (IO::IsKeyDown(SDL_SCANCODE_3))
+            c_valueToSet = Cell::Type::BEDROCK;
 
         int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
         int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
-        if (IO::MouseClicked(SDL_BUTTON_RIGHT) && grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type != 0) {
-            std::cout << grid.Get(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type << std::endl;
+        if (IO::MouseClicked(SDL_BUTTON_RIGHT) && world.getCell(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type != Cell::Type::AIR) {
+            std::cout << (int)world.getCell(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type << std::endl;
             c_valueBeforeClearStart = c_valueToSet;
-            c_valueToSet = 0;
+            c_valueToSet = Cell::Type::AIR;
         }
-        if (IO::MouseReleased(SDL_BUTTON_RIGHT) && c_valueToSet == 0)
+        if (IO::MouseReleased(SDL_BUTTON_RIGHT) && c_valueToSet == Cell::Type::AIR)
             c_valueToSet = c_valueBeforeClearStart;
 
         int& brushSize = g_options.brushSize;
@@ -292,8 +310,27 @@ int main() {
                 int dY = i / brushSize;
 
                 float distance = length(vec2(x + dX, y + dY) - vec2(x + brushSize / 2, y + brushSize / 2));
-                if (distance < brushSize / 2)
-                    grid.Set(x + dX, y + dY, { false, c_valueToSet });
+                if (distance < brushSize / 2) {
+                    Cell newCell = Cell::create(Cell::Type(c_valueToSet));
+                    world.setCell(x + dX, y + dY, newCell);
+                }
+            }
+        }
+
+        if (IO::IsKeyDown(SDL_SCANCODE_F11)) {
+            IO::ToggleFullscreen();
+        }
+
+        bool shouldDraw = false;
+        float framesPerSec = 75.f;
+        {
+            static auto prevDrawTime = std::chrono::high_resolution_clock::now();
+            auto now = std::chrono::high_resolution_clock::now();
+
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - prevDrawTime).count();
+            if (elapsedTime > 1000 / framesPerSec) {
+                shouldDraw = true;
+                prevDrawTime = now;
             }
         }
 
@@ -302,26 +339,36 @@ int main() {
         if (g_options.stateTransitionTickDelay != 0 && (IO::GetTicks()) % g_options.stateTransitionTickDelay == 0) {
             auto updateStart = std::chrono::high_resolution_clock::now();
 
-            UpdateGrid(grid);
-            grid.UpdateState();
+            if (shouldDraw)
+                world.updateAndDraw(g_options, UpdateChunk);
+            else
+                world.update(g_options, UpdateChunk);
+            ++g_simulationStepCount;
 
             auto updateEnd = std::chrono::high_resolution_clock::now();
             g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
+
         }
-        else
-            grid.UpdateState();
+        else if (shouldDraw)
+            world.draw(g_options);
 
-        // Render and draw to screen
-        auto renderStart = std::chrono::high_resolution_clock::now();
+        if (shouldDraw) {
+            // Draw GUI
+            ShowPropertiesWindow();
 
-        rendererKernel.Execute(grid, g_options);
-        rendererKernel.SyncAllFromDevice(true);
+            // Render and draw to screen
+            auto renderStart = std::chrono::high_resolution_clock::now();
 
-        IO::Render();
+            if (IO::Resized())
+                rendererKernel.data().changeBuffer(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight());
 
-        auto renderEnd = std::chrono::high_resolution_clock::now();
-        g_renderDuration = std::chrono::duration_cast<std::chrono::microseconds>(renderEnd - renderStart).count();
+            rendererKernel.execute(world, g_options, colorPalette);
 
+            IO::Render();
+
+            auto renderEnd = std::chrono::high_resolution_clock::now();
+            g_renderDuration = std::chrono::duration_cast<std::chrono::microseconds>(renderEnd - renderStart).count();
+        }
 
         // Handle dropped files
         if (IO::FileDropped()) {
@@ -329,7 +376,7 @@ int main() {
         }
     }
 
-    grid.Save("grid.bin");
+    world.save(worldPath);
 
     IO::Quit();
 

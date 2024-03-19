@@ -11,14 +11,35 @@
 namespace IO {
 
 struct RGB {
-	char r = 0;
-	char g = 0;
-	char b = 0;
-	char a = 0;
+	unsigned char r = 0;
+	unsigned char g = 0;
+	unsigned char b = 0;
+	unsigned char a = 0;
 
 	__host__ __device__
 	RGB(int _r = 0, int _g = 0, int _b = 0, int _a = 1) : r(_r), g(_g), b(_b), a(_a) { }
+
+	__host__ __device__
+	static RGB red() { return RGB(255, 0, 0); }
+	__host__ __device__
+	static RGB black() { return RGB(0, 0, 0); }
+	__host__ __device__
+	static RGB white() { return RGB(255, 255, 255); }
+
+	__host__ __device__
+	RGB operator*(float scale) {
+		return RGB(r * scale, g * scale, b * scale, a);
+	}
+
+	__host__ __device__
+	RGB operator+(RGB color) {
+		return RGB(r + color.r, g + color.g, b + color.b, a);
+	}
 }; 
+
+enum class WindowMode {
+	Windowed = 0x00, FullscreenWindowed, Fullscreen 
+};
 
 void Render();
 
@@ -37,6 +58,12 @@ void Quit();
 void OpenWindow(int width, int height);
 
 bool Resized();
+
+void SetWindowMode(WindowMode mode);
+
+WindowMode GetWindowMode();
+
+void ToggleFullscreen();
 
 bool IsButtonDown(uint8_t button);
 
@@ -58,6 +85,7 @@ bool KeyReleased(uint8_t key);
  * @return A vec2 containing normalized coordinates.
  */
 vec2 NormalizePixel(int x, int y);
+vec2 NormalizePixel(vec2 pos);
 
 vec2 GetMousePos();
 
@@ -87,4 +115,11 @@ const std::wstring& GetDroppedFilePath();
 
 void ResizeWindow(int width, int height);
 
+void DrawRect(int x, int y, int w, int h, RGB color);
+
 } // namespace IO
+
+inline std::ostream& operator<<(std::ostream& os, IO::RGB rgb) {
+	os << "rgba(" << (unsigned)rgb.r << "," << (unsigned)rgb.g << "," << (unsigned)rgb.b << "," << (unsigned)rgb.a << ")";
+	return os;
+}
