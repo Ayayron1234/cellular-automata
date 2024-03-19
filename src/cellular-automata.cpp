@@ -249,6 +249,9 @@ void UpdateChunk(Options options, Chunk& chunk) {
 
 int main() {
     std::string worldPath = "data/worlds/test";
+#ifdef _DEBUG
+    worldPath = "data/worlds/dbgTest";
+#endif
     if (worldPath.empty()) {
         std::cout << "World name: ";
         std::stringstream worldPathStream;
