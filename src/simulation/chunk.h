@@ -21,12 +21,9 @@ public:
 		;
 #else
 	{
-		if (isCoordInside(x, y)) {
-			if (isUniform())
-				return m_uniformCell;
-			return m_deviceBuffer[coordToIndex(x, y)];
-		}
-		return Cell();
+		if (empty() || !isCoordInside(x, y))
+			return Cell();
+		return m_deviceBuffer[coordToIndex(x, y)];
 	}
 #endif
 
@@ -95,25 +92,12 @@ public:
 	}
 
 	/**
-	 * Checks if the Chunk is uniform, meaning all cells in the Chunk have the same properties.
-	 *
-	 * @return bool - Returns true if the Chunk is uniform, false otherwise.
-	 */
-	__host__ __device__
-	bool isUniform() const {
-		return !m_isVaried;
-	}
-
-	/**
 	 * Serializes the non-uniform Chunk data and writes it to the provided output file stream.
 	 * Skips serialization if the Chunk is uniform.
 	 *
 	 * @param os - The output file stream to write the serialized data.
 	 */
 	void serialise(std::ofstream& os) const {
-		if (isUniform())
-			return;
-
 		// Write chunk size
 		os.write((char*)&m_size, sizeof(m_size));
 
@@ -121,8 +105,8 @@ public:
 		os.write((char*)&m_coord.x, sizeof(m_coord.x));
 		os.write((char*)&m_coord.y, sizeof(m_coord.y));
 
-		// Write cell type counts
-		os.write((char*)m_cellTypeCounts, Cell::MaxTypeCount() * sizeof(m_cellTypeCounts[0]));
+		// Write nonAir cell count
+		os.write((char*)&m_nonAirCount, sizeof(m_nonAirCount));
 
 		// Write cells
 		os.write((char*)m_cells, CHUNK_SIZE * CHUNK_SIZE * sizeof(Cell));
@@ -135,18 +119,18 @@ public:
 	 * @param is - The input file stream containing the serialized data.
 	 */
 	void deserialise(std::ifstream& is) {
-		if (isUniform())
-			return;
-
 		// Read chunk size
-		is.read((char*)&m_size, sizeof(m_size));
+		decltype(m_size) size;
+		is.read((char*)&size, sizeof(m_size));
+		if (size != m_size)
+			return;
 
 		// Read coordinates
 		is.read((char*)&m_coord.x, sizeof(m_coord.x));
 		is.read((char*)&m_coord.y, sizeof(m_coord.y));
 
-		// Read cell type counts
-		is.read((char*)m_cellTypeCounts, Cell::MaxTypeCount() * sizeof(m_cellTypeCounts[0]));
+		// Read nonAir cell count
+		is.read((char*)&m_nonAirCount, sizeof(m_nonAirCount));
 
 		// Read cells
 		is.read((char*)m_cells, CHUNK_SIZE * CHUNK_SIZE * sizeof(Cell));
@@ -187,7 +171,10 @@ public:
 		return CellCoord(m_coord.x * CHUNK_SIZE, m_coord.y * CHUNK_SIZE);
 	}
 
-	Chunk& operator=(const Json& json);
+	__host__ __device__
+	bool empty() const {
+		return m_cells == nullptr;
+	}
 
 	__host__ __device__
 	Chunk(const Chunk&) = default;
@@ -196,13 +183,12 @@ private:
 	World* m_world;				// Pointer to the World containing the Chunk
 	ChunkCoord m_coord;			// Coordinates of the Chunk within the World
 	size_t m_size;              // Size of the Chunk
+	//std::atomic<bool> m_isAllocated;
+								// Array counting the occurrences of each Cell type
+	//std::atomic<unsigned> m_nonAirCount;
+	unsigned m_nonAirCount = 0;
 
-	bool m_isVaried = false;    // Flag indicating if the Chunk is uniform
-	Cell m_uniformCell;         // Uniform Cell properties if the Chunk is uniform
 	Cell* m_cells = nullptr;    // Dynamic array storing individual Cell properties
-
-	unsigned int m_cellTypeCounts[Cell::MaxTypeCount()] = { 0 };  // Array counting the occurrences of each Cell type
-
 	DeviceBuffer<Cell> m_deviceBuffer;
 
 	__host__ __device__
@@ -220,24 +206,9 @@ private:
 		return m_deviceBuffer;
 	}
 
-	void makeUniform(Cell::Type type) {
-		m_isVaried = false;
-		m_deviceBuffer.freeDevice();
-		m_uniformCell = Cell::create(type);
-	}
-
-	void makeVaried() {
-		m_isVaried = true;
-		m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
-		for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; ++i)
-			m_cells[i] = Cell::create(m_uniformCell.type);
-	}
-
 	void commitToDevice() {
-		if (isUniform()) {
-			m_deviceBuffer.freeDevice();
+		if (empty())
 			return;
-		}
 
 		if (!m_deviceBuffer.isAllocated())
 			m_deviceBuffer.alloc(CHUNK_SIZE * CHUNK_SIZE);
@@ -245,29 +216,33 @@ private:
 		m_deviceBuffer.uploadAsync(m_cells, CHUNK_SIZE * CHUNK_SIZE);
 	}
 
-	// Returns -1 if varied
-	int getUniformType() const {
-		for (int i = 0; i < Cell::MaxTypeCount(); ++i)
-			if (m_cellTypeCounts[i] == CHUNK_SIZE * CHUNK_SIZE)
-				return i;
-		return -1;
+	void allocate() {
+		m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
+	}
+
+	void clear() {
+		delete[] m_cells;
+		m_cells = nullptr;
 	}
 
 	Chunk() 
-		: m_isVaried(false)
+		: m_world(nullptr)
 		, m_size(CHUNK_SIZE)
-		, m_uniformCell(SimValues::Air())
 	{ }
 
-	Chunk(World* world, ChunkCoord coord, bool isUniform)
+	Chunk(World* world)
+		: m_world(world)
+		, m_size(CHUNK_SIZE)
+	{
+		allocate();
+	}
+
+	Chunk(World* world, ChunkCoord coord)
 		: m_world(world)
 		, m_coord(coord)
 		, m_size(CHUNK_SIZE)
-		, m_isVaried(!isUniform)
 	{
-		if (!isUniform)
-			m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
-		m_cellTypeCounts[(unsigned int)Cell::Type::AIR] = CHUNK_SIZE * CHUNK_SIZE;
+		allocate();
 	}
 
 	static std::string chunkFileName(ChunkCoord coord) {

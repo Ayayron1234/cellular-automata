@@ -30,29 +30,18 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, World world, Options options, C
     Cell cell = world.getCell(coord);
     IO::RGB color;
     color = colorPalette.getColor(cell);
-    //color = getColor(world.getCell(coord).type);
-
-    //int samples = cellCoordFromPixel(options, col + 1, row).x - coord.x + 1;
-    //for (int iX = 0; iX < samples; ++iX)
-    //    for (int iY = 0; iY < samples; ++iY)
-    //        color = color + getColor(world.getCell(cellCoordFromPixel(options, col + iX, row + iY)).type) * (1.f / (samples * samples));
-
-    //if (cell.type == Cell::Type::SAND) {
-    //    color.r *= (0.90f + cell.shade * .025f);
-    //    color.g *= (0.90f + cell.shade * .025f);
-    //    color.b *= (0.90f + cell.shade * .025f);
-    //}
 
     if (options.showChunkBorders) {
         ChunkCoord chunkCoord = world.chunkCoordOf(coord);
-        bool uniform = world.getChunk(chunkCoord)->isUniform();
-        bool isChunkEdge = world.chunkCoordOf(cellCoordFromPixel(options, col + 1, row)).x != chunkCoord.x
-                        || world.chunkCoordOf(cellCoordFromPixel(options, col, row + 1)).y != chunkCoord.y
-                        || world.chunkCoordOf(cellCoordFromPixel(options, col - 1, row + 1)).x != chunkCoord.x
-                        || world.chunkCoordOf(cellCoordFromPixel(options, col, row - 1)).y != chunkCoord.y;
+        if (!world.getChunk(chunkCoord)->empty()) {
+            bool isChunkEdge = world.chunkCoordOf(cellCoordFromPixel(options, col + 1, row)).x != chunkCoord.x
+                            || world.chunkCoordOf(cellCoordFromPixel(options, col, row + 1)).y != chunkCoord.y
+                            || world.chunkCoordOf(cellCoordFromPixel(options, col - 1, row + 1)).x != chunkCoord.x
+                            || world.chunkCoordOf(cellCoordFromPixel(options, col, row - 1)).y != chunkCoord.y;
 
-        if (isChunkEdge && !uniform)
-            color = IO::RGB::white();
+            if (isChunkEdge)
+                color = IO::RGB::white();
+        }
     }
 
     pixelBuffer[i] = color;

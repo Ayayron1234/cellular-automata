@@ -56,7 +56,7 @@ public:
 	void setCell(coord_t x, coord_t y, Cell cell) {
 		ChunkCoord chunkCoord = chunkCoordOf(x, y);
 		if (!hasChunk(chunkCoord)) {
-			createChunk(chunkCoord, false)->setCell(x, y, cell);
+			createChunk(chunkCoord)->setCell(x, y, cell);
 			return;
 		}
 
@@ -86,7 +86,7 @@ public:
 	Chunk* getChunk(ChunkCoord coord) {
 		if (!hasChunk(coord))
 			#ifndef __CUDA_ARCH__
-			return createChunk(coord, true);
+			return createChunk(coord);
 			#else
 			return nullptr;
 			#endif
@@ -207,21 +207,35 @@ public:
 	 * @param path - The path where the World state should be saved.
 	 */
 	void save(const std::string& path) const {
-		m_saveDirectory = path;
-
 		namespace fs = std::filesystem;
+
+		// Create save path
 		fs::create_directories(path);
 
-		Json json = Json::CreateEmptyArray();
+		// Save world data
+		std::ofstream worldOfs(path + "/world.json");
+		worldOfs << Json(*this);
+
+		// Save chunks
+		std::string chunksPath = path + "/chunks/";
+		fs::remove_all(chunksPath);
+		fs::create_directories(chunksPath);
 		for (auto& entry : m_chunks) {
-			Json chunkJson = Json(*entry.second);
-			json.array.push_back(chunkJson);
+			ChunkCoord coord = entry.first;
+			Chunk& chunk = *entry.second;
+
+			if (chunk.empty())
+				continue;
+
+			// Create chunk path
+			std::stringstream chunkFileName;
+			chunkFileName << "(" << coord.x << ";" << coord.y << ").bin";
+			std::string chunkPath = chunksPath + chunkFileName.str();
+
+			// Serialise chunk
+			std::ofstream ofs(chunkPath, std::ios::binary);
+			chunk.serialise(ofs);
 		}
-
-		std::ofstream jsonOfs(path + std::string("/world.json"));
-		jsonOfs << json;
-
-		m_saveDirectory.clear();
 	}
 
 	/**
@@ -230,21 +244,34 @@ public:
 	 * @param path - The path where the World state should be loaded from.
 	 */
 	void load(const std::string& path) {
-		m_saveDirectory = path;
+		namespace fs = std::filesystem;
 
-		std::ifstream jsonIfs(path + std::string("/world.json"));
-		if (!jsonIfs.is_open())
+		// Load world json
+		std::ifstream worldFile(path + "/world.json");
+		if (!worldFile.is_open())
 			return;
+		Json worldJson;
+		worldFile >> worldJson;
 
-		Json json;
-		jsonIfs >> json;
+		// Check world data
+		if ((unsigned)worldJson["chunkSize"] != CHUNK_SIZE) return;
+		if ((unsigned)worldJson["cellSize"] != sizeof(Cell)) return;
 
-		for (auto& chunkJson : json.array) {
-			Chunk* chunk = createChunk(chunkJson["coord"], true);
-			*chunk = chunkJson;
+		// Load chunks
+		std::string chunksPath = path + "/chunks";
+		for (auto& chunkFilePath : fs::recursive_directory_iterator(chunksPath)) {
+			if (chunkFilePath.is_directory())
+				continue;
+
+			// Open file
+			std::ifstream chunkFile(chunkFilePath.path(), std::ios::binary);
+			if (!chunkFile.is_open())
+				continue;
+
+			Chunk* chunk = new Chunk(this);
+			chunk->deserialise(chunkFile);
+			m_chunks.insert({ chunk->m_coord, chunk });
 		}
-
-		m_saveDirectory.clear();
 	}
 
 	/**
@@ -284,15 +311,23 @@ public:
 		uploadDrawnChunksToDevice(drawnChunksChanged);
 	}
 
+	World() = default;
+
+	World(const World& world)
+		: m_chunks()
+		, m_minDrawnChunk(world.m_minDrawnChunk)
+		, m_maxDrawnChunk(world.m_maxDrawnChunk)
+		, m_deviceChunks(world.m_deviceChunks)
+	{ }
+
 private:
 	std::unordered_map<ChunkCoord, Chunk*, ChunkCoord::Hasher> m_chunks{};
-	mutable std::string m_saveDirectory;
 
 	ChunkCoord			m_minDrawnChunk;
 	ChunkCoord			m_maxDrawnChunk;
 	DeviceBuffer<Chunk> m_deviceChunks;
 	Chunk*				m_chunksToCommitToDevice = nullptr;
-	
+
 #ifndef __CUDA_ARCH__
 	bool hasChunk(ChunkCoord coord) const {
 		return m_chunks.find(coord) != m_chunks.end();
@@ -307,9 +342,8 @@ private:
 	void updateImpl(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
 		ChunkWorkerPool::instance().setParams(options, updateFunction, doDraw);
 		for (auto& chunk : m_chunks)
-			if (!chunk.second->isUniform())
-				chunk.second->process(options, updateFunction, doDraw);
-				//ChunkWorkerPool::instance().processChunk(chunk.second);
+			//chunk.second->process(options, updateFunction, doDraw);
+			ChunkWorkerPool::instance().processChunk(chunk.second);
 
 		ChunkWorkerPool::instance().awaitAll();
 	}
@@ -372,46 +406,21 @@ private:
 		return (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) * (m_maxDrawnChunk.y - m_minDrawnChunk.y + 1);
 	}
 
-	Chunk* createChunk(ChunkCoord coord, bool isUniform) {
-		Chunk* chunk = new Chunk(this, coord, isUniform);
+	Chunk* createChunk(ChunkCoord coord) {
+		Chunk* chunk = new Chunk(this, coord);
 		m_chunks.insert({ coord, chunk });
 		return chunk;
 	}
 
-	friend Json& Json::operator=<Chunk>(Chunk chunk);
-	friend Chunk& Chunk::operator=(const Json& json);
 	friend void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bool doDraw);
 };
 
 template <>
-inline Json& Json::operator=(Chunk chunk) {
-	*this = Json::CreateEmptyObject<Chunk>();
+inline Json& Json::operator=(World world) {
+	*this = Json::CreateEmptyObject<World>();
 
-	// Assign coordinates and uniformity information
-	(*this)["coord"] = Json(chunk.m_coord);
-	(*this)["uniform"] = Json(chunk.isUniform());
-
-	if (chunk.isUniform()) {
-		// Serialize and assign uniformCell data for uniform Chunks
-		(*this)["uniformCell"] = Json(chunk.m_uniformCell);
-	}
-	else {
-		// Serialize and save non-uniform Chunks to binary file
-		const std::string& path = chunk.m_world->m_saveDirectory;
-		if (path.empty())
-			return *this;
-
-		std::string fileName = Chunk::chunkFileName(chunk.m_coord);
-		std::ofstream ofs(path + fileName, std::ios::binary);
-		if (!ofs.is_open()) {
-			std::cerr << "[World]: Couldn't open " << path << fileName << " for serialisation. " << std::endl;
-			return *this;
-		}
-
-		// Serialize Chunk data and save the binary file path in the JSON object
-		chunk.serialise(ofs);
-		(*this)["path"] = Json(fileName);
-	}
+	(*this)["chunkSize"] = CHUNK_SIZE;
+	(*this)["cellSize"] = sizeof(Cell);
 
 	return *this;
 }
