@@ -11,6 +11,29 @@ bool g_propertiesWindowHovered = false;
 long long g_updateDuration;
 long long g_renderDuration;
 
+/*
+TODO: 
+    BUG FIXES: 
+        - multithreading: sometimes freezes in release mode
+        - multithreading: always freezes in debug mode with more than one chunks
+        - multithreading: nonAirCount is not always correct
+        - fix camera jump when resizing window
+
+    OPTIMIZATION: 
+        - track whether chunks need to be updated
+        - track whether chunk data changed (if not don't reupload to device)
+        - dirty rectangle
+
+    SIMULATION:
+        - more cell types
+        - cell velocity
+        - textured cell insertion
+
+    OTHER:
+        - cleanup this file
+
+*/
+
 /**
  * Shows the properties window, allowing users to modify Mandelbrot set options.
  * Updates global variables based on user interactions.

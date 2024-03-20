@@ -1,5 +1,6 @@
 #pragma once
 #include "common.h"
+#include <mutex>
 #include "../device.h"
 
 class Options;
@@ -177,19 +178,47 @@ public:
 	}
 
 	__host__ __device__
-	Chunk(const Chunk&) = default;
+	bool isUpdating() const {
+		return m_shouldUpdate;
+	}
+
+	void requestUpdate();
+
+	__host__ __device__
+	Chunk(const Chunk& chunk) 
+		: m_world(chunk.m_world)
+		, m_coord(chunk.m_coord)
+		, m_size(chunk.m_size)
+		, m_nonAirCount(chunk.m_nonAirCount)
+		, m_cells(chunk.m_cells)
+		, m_deviceBuffer(chunk.m_deviceBuffer)
+		, m_shouldUpdate(chunk.m_shouldUpdate)
+	{ }
+
+	Chunk& operator=(const Chunk& chunk) {
+		m_world = chunk.m_world;
+		m_coord = chunk.m_coord;
+		m_size = chunk.m_size;
+		m_nonAirCount = chunk.m_nonAirCount;
+		m_cells = chunk.m_cells;
+		m_deviceBuffer = chunk.m_deviceBuffer;
+		m_shouldUpdate = chunk.m_shouldUpdate;
+		return *this;
+	}
 
 private:
 	World* m_world;				// Pointer to the World containing the Chunk
 	ChunkCoord m_coord;			// Coordinates of the Chunk within the World
 	size_t m_size;              // Size of the Chunk
-	//std::atomic<bool> m_isAllocated;
-								// Array counting the occurrences of each Cell type
-	//std::atomic<unsigned> m_nonAirCount;
-	unsigned m_nonAirCount = 0;
+
+	std::mutex m_airCountMutex;
+	unsigned m_nonAirCount = 0;	// Number of cells in chunk that are not air
 
 	Cell* m_cells = nullptr;    // Dynamic array storing individual Cell properties
 	DeviceBuffer<Cell> m_deviceBuffer;
+
+	bool m_shouldUpdate = true;
+	bool m_updatedOnEvenTick;
 
 	__host__ __device__
 	size_t coordToIndex(coord_t x, coord_t y) const {
@@ -205,6 +234,8 @@ private:
 	DeviceBuffer<Cell> getDeviceBuffer() const {
 		return m_deviceBuffer;
 	}
+
+	void updateChunksNearCell(CellCoord coord);
 
 	void commitToDevice() {
 		if (empty())

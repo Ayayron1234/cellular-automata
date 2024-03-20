@@ -28,19 +28,21 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, World world, Options options, C
     CellCoord coord = cellCoordFromPixel(options, col, row);
 
     Cell cell = world.getCell(coord);
+    
     IO::RGB color;
     color = colorPalette.getColor(cell);
 
     if (options.showChunkBorders) {
         ChunkCoord chunkCoord = world.chunkCoordOf(coord);
-        if (!world.getChunk(chunkCoord)->empty()) {
+        Chunk* chunk = world.getChunk(chunkCoord);
+        if (!chunk->empty()) {
             bool isChunkEdge = world.chunkCoordOf(cellCoordFromPixel(options, col + 1, row)).x != chunkCoord.x
                             || world.chunkCoordOf(cellCoordFromPixel(options, col, row + 1)).y != chunkCoord.y
                             || world.chunkCoordOf(cellCoordFromPixel(options, col - 1, row + 1)).x != chunkCoord.x
                             || world.chunkCoordOf(cellCoordFromPixel(options, col, row - 1)).y != chunkCoord.y;
 
             if (isChunkEdge)
-                color = IO::RGB::white();
+                color = (chunk->isUpdating()) ? IO::RGB::red() : IO::RGB(50, 50, 50);
         }
     }
 

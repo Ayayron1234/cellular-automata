@@ -13,17 +13,27 @@ inline Cell Chunk::getCell(coord_t x, coord_t y) const {
 
 void Chunk::setCell(coord_t x, coord_t y, Cell cell) {
 	if (isCoordInside(x, y)) {
-		// Break uniformity if needed
+		// Allocate chunk if empty
 		if (empty())
 			allocate();
+
+		// Tell the chunk to update
+		m_shouldUpdate = true;
+		m_updatedOnEvenTick = m_world->isEvenTick();
 
 		// Access the specified Cell position within the Chunk
 		Cell& cellPos = m_cells[coordToIndex(x, y)];
 
 		// Update cell and cell type counts
+		m_airCountMutex.lock();
 		m_nonAirCount += cellPos.type == Cell::Type::AIR;
 		cellPos = cell;
 		m_nonAirCount -= cellPos.type == Cell::Type::AIR;
+		m_airCountMutex.unlock();
+
+
+		// Update neighbouring chunk if the cell is near chunk edge
+		updateChunksNearCell({ x, y });
 	}
 	else 
 		// Delegate the task to the World if the coordinates are outside the Chunk
@@ -31,15 +41,29 @@ void Chunk::setCell(coord_t x, coord_t y, Cell cell) {
 }
 
 void Chunk::swapCells(CellCoord a, CellCoord b) {
+	// If atleast one of the coords is outside, delegate the task to world.
 	if (!isCoordInside(a)) { m_world->swapCells(a, b); return; }
 	if (!isCoordInside(b)) { m_world->swapCells(a, b); return; }
 
+	// Tell the chunk to update
+	m_shouldUpdate = true;
+	m_updatedOnEvenTick = m_world->isEvenTick();
+	
+	// Swap cells
 	Cell aCell = m_cells[coordToIndex(a)];
 	m_cells[coordToIndex(a)] = m_cells[coordToIndex(b)];
 	m_cells[coordToIndex(b)] = aCell;
+
+	// Update neighbouring chunk if the cell is near chunk edge
+	updateChunksNearCell(a);
+	updateChunksNearCell(b);
 }
 
 void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
+	bool shouldUpdate = m_shouldUpdate;
+	if (m_world->isEvenTick() != m_updatedOnEvenTick)
+		m_shouldUpdate = false;
+
 	if (doDraw) {
 		// Check whether the chunk will be drawn to the screen 
 		if (m_world->isChunkDrawn(m_coord)) {
@@ -50,7 +74,7 @@ void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bo
 			m_deviceBuffer.freeDevice();
 	}
 
-	if (updateFunction != nullptr) {
+	if (shouldUpdate && updateFunction != nullptr) {
 		// Advance chunk simulation state
 		updateFunction(options, *this);
 
@@ -58,4 +82,16 @@ void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bo
 		if (m_nonAirCount == 0)
 			clear();
 	}
+}
+
+void Chunk::requestUpdate() {
+	m_shouldUpdate = true;
+	m_updatedOnEvenTick = m_world->isEvenTick();
+}
+
+void Chunk::updateChunksNearCell(CellCoord coord) {
+	if (coord.x % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x - 1, m_coord.y });
+	if (coord.y % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x, m_coord.y - 1 });
+	if (coord.x % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x + 1, m_coord.y });
+	if (coord.y % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x, m_coord.y + 1 });
 }
