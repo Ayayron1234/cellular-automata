@@ -311,6 +311,15 @@ public:
 		uploadDrawnChunksToDevice(drawnChunksChanged);
 	}
 
+	bool isEvenTick() const {
+		return m_evenTick;
+	}
+
+	void requestChunkUpdate(ChunkCoord coord) {
+		if (hasChunk(coord))
+			m_chunks.at(coord)->requestUpdate();
+	}
+
 	World() = default;
 
 	World(const World& world)
@@ -328,6 +337,8 @@ private:
 	DeviceBuffer<Chunk> m_deviceChunks;
 	Chunk*				m_chunksToCommitToDevice = nullptr;
 
+	bool m_evenTick;
+
 #ifndef __CUDA_ARCH__
 	bool hasChunk(ChunkCoord coord) const {
 		return m_chunks.find(coord) != m_chunks.end();
@@ -340,6 +351,9 @@ private:
 #endif
 
 	void updateImpl(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
+		if (updateFunction != nullptr)
+			m_evenTick = !m_evenTick;
+
 		ChunkWorkerPool::instance().setParams(options, updateFunction, doDraw);
 		for (auto& chunk : m_chunks)
 			//chunk.second->process(options, updateFunction, doDraw);
