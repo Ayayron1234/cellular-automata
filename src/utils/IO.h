@@ -33,7 +33,10 @@ struct RGB {
 
 	__host__ __device__
 	RGB operator+(RGB color) {
-		return RGB(r + color.r, g + color.g, b + color.b, a);
+		float a1 = 1.f - a / 255.f;
+		float a2 = 1.f - color.a / 255.f;
+		unsigned char ar = (1.f - a1 * a2) * 255.f;
+		return RGB(r + color.r, g + color.g, b + color.b, ar);
 	}
 }; 
 

@@ -178,8 +178,8 @@ public:
 	}
 
 	__host__ __device__
-	bool isUpdating() const {
-		return m_shouldUpdate;
+	bool updated() const {
+		return m_updated;
 	}
 
 	void requestUpdate();
@@ -193,6 +193,7 @@ public:
 		, m_cells(chunk.m_cells)
 		, m_deviceBuffer(chunk.m_deviceBuffer)
 		, m_shouldUpdate(chunk.m_shouldUpdate)
+		, m_updated(chunk.m_updated)
 	{ }
 
 	Chunk& operator=(const Chunk& chunk) {
@@ -203,21 +204,23 @@ public:
 		m_cells = chunk.m_cells;
 		m_deviceBuffer = chunk.m_deviceBuffer;
 		m_shouldUpdate = chunk.m_shouldUpdate;
+		m_updated = chunk.m_updated;
 		return *this;
 	}
 
 private:
-	World* m_world;				// Pointer to the World containing the Chunk
-	ChunkCoord m_coord;			// Coordinates of the Chunk within the World
-	size_t m_size;              // Size of the Chunk
+	World*		m_world;	// Pointer to the World containing the Chunk
+	ChunkCoord	m_coord;	// Coordinates of the Chunk within the World
+	size_t		m_size;     // Size of the Chunk
 
 	std::mutex m_airCountMutex;
-	unsigned m_nonAirCount = 0;	// Number of cells in chunk that are not air
+	volatile unsigned m_nonAirCount = 0;	// Number of cells in chunk that are not air
 
 	Cell* m_cells = nullptr;    // Dynamic array storing individual Cell properties
 	DeviceBuffer<Cell> m_deviceBuffer;
 
 	bool m_shouldUpdate = true;
+	bool m_updated = true;
 	bool m_updatedOnEvenTick;
 
 	__host__ __device__
@@ -241,11 +244,15 @@ private:
 		if (empty())
 			return;
 
-		if (!m_deviceBuffer.isAllocated())
+		bool allocated = m_deviceBuffer.isAllocated();
+		if (!allocated)
 			m_deviceBuffer.alloc(CHUNK_SIZE * CHUNK_SIZE);
 
-		m_deviceBuffer.uploadAsync(m_cells, CHUNK_SIZE * CHUNK_SIZE);
+		if (!allocated || updated())
+			m_deviceBuffer.uploadAsync(m_cells, CHUNK_SIZE * CHUNK_SIZE);
 	}
+
+	void checkForUpdates();
 
 	void allocate() {
 		m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];

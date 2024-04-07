@@ -18,8 +18,7 @@ void Chunk::setCell(coord_t x, coord_t y, Cell cell) {
 			allocate();
 
 		// Tell the chunk to update
-		m_shouldUpdate = true;
-		m_updatedOnEvenTick = m_world->isEvenTick();
+		requestUpdate();
 
 		// Access the specified Cell position within the Chunk
 		Cell& cellPos = m_cells[coordToIndex(x, y)];
@@ -30,7 +29,6 @@ void Chunk::setCell(coord_t x, coord_t y, Cell cell) {
 		cellPos = cell;
 		m_nonAirCount -= cellPos.type == Cell::Type::AIR;
 		m_airCountMutex.unlock();
-
 
 		// Update neighbouring chunk if the cell is near chunk edge
 		updateChunksNearCell({ x, y });
@@ -46,8 +44,7 @@ void Chunk::swapCells(CellCoord a, CellCoord b) {
 	if (!isCoordInside(b)) { m_world->swapCells(a, b); return; }
 
 	// Tell the chunk to update
-	m_shouldUpdate = true;
-	m_updatedOnEvenTick = m_world->isEvenTick();
+	requestUpdate();
 	
 	// Swap cells
 	Cell aCell = m_cells[coordToIndex(a)];
@@ -60,21 +57,20 @@ void Chunk::swapCells(CellCoord a, CellCoord b) {
 }
 
 void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
-	bool shouldUpdate = m_shouldUpdate;
-	if (m_world->isEvenTick() != m_updatedOnEvenTick)
-		m_shouldUpdate = false;
+	if (updateFunction != nullptr)
+		checkForUpdates();
 
 	if (doDraw) {
 		// Check whether the chunk will be drawn to the screen 
 		if (m_world->isChunkDrawn(m_coord)) {
 			commitToDevice();
-			m_world->addChunkToDrawnChunks(this);
+			m_world->drawChunk(this);
 		}
 		else
 			m_deviceBuffer.freeDevice();
 	}
 
-	if (shouldUpdate && updateFunction != nullptr) {
+	if (updated() && updateFunction != nullptr) {
 		// Advance chunk simulation state
 		updateFunction(options, *this);
 
@@ -90,8 +86,14 @@ void Chunk::requestUpdate() {
 }
 
 void Chunk::updateChunksNearCell(CellCoord coord) {
-	if (coord.x % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x - 1, m_coord.y });
-	if (coord.y % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x, m_coord.y - 1 });
-	if (coord.x % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x + 1, m_coord.y });
-	if (coord.y % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x, m_coord.y + 1 });
+	if (abs(coord.x) % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x - 1, m_coord.y });
+	if (abs(coord.y) % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x, m_coord.y - 1 });
+	if (abs(coord.x) % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x + 1, m_coord.y });
+	if (abs(coord.y) % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x, m_coord.y + 1 });
+}
+
+void Chunk::checkForUpdates() {
+	m_updated = m_shouldUpdate;
+	if (m_world->isEvenTick() != m_updatedOnEvenTick)
+		m_shouldUpdate = false;
 }

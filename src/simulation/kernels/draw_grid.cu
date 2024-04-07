@@ -42,7 +42,7 @@ void setPixel(GlobalBuffer<IO::RGB> pixelBuffer, World world, Options options, C
                             || world.chunkCoordOf(cellCoordFromPixel(options, col, row - 1)).y != chunkCoord.y;
 
             if (isChunkEdge)
-                color = (chunk->isUpdating()) ? IO::RGB::red() : IO::RGB(50, 50, 50);
+                color = (chunk->updated()) ? IO::RGB::red() : IO::RGB(50, 50, 50);
         }
     }
 

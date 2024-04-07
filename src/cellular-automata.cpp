@@ -360,23 +360,32 @@ int main() {
             }
         }
 
-        // Invoke CUDA function
-        static long c_tickCount = 0;
-        if (g_options.stateTransitionTickDelay != 0 && (IO::GetTicks()) % g_options.stateTransitionTickDelay == 0) {
-            auto updateStart = std::chrono::high_resolution_clock::now();
+        //// Invoke CUDA function
+        //static long c_tickCount = 0;
+        //if (g_options.stateTransitionTickDelay != 0 && (IO::GetTicks()) % g_options.stateTransitionTickDelay == 0) {
+        //    auto updateStart = std::chrono::high_resolution_clock::now();
 
-            if (shouldDraw)
-                world.updateAndDraw(g_options, UpdateChunk);
-            else
-                world.update(g_options, UpdateChunk);
-            ++g_simulationStepCount;
+        //    if (shouldDraw)
+        //        world.updateAndDraw(g_options, UpdateChunk);
+        //    else
+        //        world.update(g_options, UpdateChunk);
+        //    ++g_simulationStepCount;
 
-            auto updateEnd = std::chrono::high_resolution_clock::now();
-            g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
+        //    auto updateEnd = std::chrono::high_resolution_clock::now();
+        //    g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
 
-        }
-        else if (shouldDraw)
-            world.draw(g_options);
+        //}
+        //else if (shouldDraw)
+        //    world.draw(g_options);
+
+        auto updateStart = std::chrono::high_resolution_clock::now();
+
+        world.updateAndDraw(g_options, UpdateChunk);
+        ++g_simulationStepCount;
+
+        auto updateEnd = std::chrono::high_resolution_clock::now();
+        g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
+
 
         if (shouldDraw) {
             // Draw GUI

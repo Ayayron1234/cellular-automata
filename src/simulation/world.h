@@ -320,25 +320,30 @@ public:
 			m_chunks.at(coord)->requestUpdate();
 	}
 
+	void drawChunk(Chunk* chunk) {
+		addChunkToDrawnChunks(chunk);
+	}
+
 	World() = default;
 
-	World(const World& world)
-		: m_chunks()
-		, m_minDrawnChunk(world.m_minDrawnChunk)
-		, m_maxDrawnChunk(world.m_maxDrawnChunk)
-		, m_deviceChunks(world.m_deviceChunks)
-	{ }
+	World(const World& world) = default;
 
 private:
-	std::unordered_map<ChunkCoord, Chunk*, ChunkCoord::Hasher> m_chunks{};
+	using ChunkMap = std::unordered_map<ChunkCoord, Chunk*, ChunkCoord::Hasher>;
+	using ProcessFnc = decltype(&Chunk::process);
+	using WorkerPool = ChunkWorkerPoolT<ProcessFnc>::type;
+
+	ChunkMap			m_chunks{};
 
 	ChunkCoord			m_minDrawnChunk;
 	ChunkCoord			m_maxDrawnChunk;
 	DeviceBuffer<Chunk> m_deviceChunks;
 	Chunk*				m_chunksToCommitToDevice = nullptr;
 
-	bool m_evenTick;
+	bool				m_evenTick;
 
+	WorkerPool			m_workers = makeChunkWorkerPool(&Chunk::process);
+	
 #ifndef __CUDA_ARCH__
 	bool hasChunk(ChunkCoord coord) const {
 		return m_chunks.find(coord) != m_chunks.end();
@@ -353,13 +358,19 @@ private:
 	void updateImpl(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
 		if (updateFunction != nullptr)
 			m_evenTick = !m_evenTick;
-
-		ChunkWorkerPool::instance().setParams(options, updateFunction, doDraw);
+		
+		m_workers->updateParams(options, updateFunction, doDraw);
 		for (auto& chunk : m_chunks)
 			//chunk.second->process(options, updateFunction, doDraw);
-			ChunkWorkerPool::instance().processChunk(chunk.second);
+			m_workers->processChunk(chunk.second);
 
-		ChunkWorkerPool::instance().awaitAll();
+		m_workers->awaitAll();
+
+		for (auto& chunk : m_chunks)
+			if (chunk.second->empty()) {
+				m_chunks.erase(chunk.first);
+				break;
+			}
 	}
 
 	void addChunkToDrawnChunks(Chunk* chunk) {
@@ -372,9 +383,10 @@ private:
 
 	// returns true when reallocated the drawnChunksBuffer
 	bool prepareDrawnChunksBuffer(Options options, bool clearChunks) {
+		size_t prevDrawnChunkCount = drawnChunkCount();
 		bool shouldReallocDrawnChunksBuffer = changeMinAndMaxDrawnChunks(options);
 
-		if (shouldReallocDrawnChunksBuffer)
+		if (shouldReallocDrawnChunksBuffer && drawnChunkCount() != prevDrawnChunkCount)
 			reallocDrawnChunksBuffer();
 		else if (clearChunks)
 			resetDrawnChunksBuffer();
@@ -425,8 +437,6 @@ private:
 		m_chunks.insert({ coord, chunk });
 		return chunk;
 	}
-
-	friend void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bool doDraw);
 };
 
 template <>

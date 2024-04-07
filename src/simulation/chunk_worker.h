@@ -6,83 +6,118 @@
 #include "chunk.h"
 #include <functional>
 
-class ChunkTaskQueue {
-public:
-	void enqueue(Chunk* chunk) {
-		std::lock_guard<std::mutex> queueLock{ m_lock };
-		m_queue.push(chunk);
-		m_cv.notify_one();
-	}
-
-	Chunk* dequeue() {
-		std::unique_lock<std::mutex> queue_lock{ m_lock };
-		while (m_queue.empty()) {
-			m_cv.wait(queue_lock);
-		}
-		
-		Chunk* res = m_queue.front();
-		m_queue.pop();
-		return res;
-	}
-
-private:
-	std::queue<Chunk*> m_queue;
-	std::condition_variable m_cv;
-	std::mutex m_lock;
-};
-
+template <typename... Args>
 class ChunkWorkerPool {
 public:
 	ChunkWorkerPool() {
 		unsigned nThreads = std::thread::hardware_concurrency();
-		for (int i = 0; i < nThreads; ++i)
-			m_threads.push_back(new std::thread(threadLoop, this));
-	}
-	
-	void setParams(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
-		m_paramOptions = options;
-		m_paramUpdateFunction = updateFunction;
-		m_paramDoDraw = doDraw;
-	}
 
-	void processChunk(Chunk* chunk) {
-		m_allTasksDone = false;
-		++m_taskCount;
-		m_tasks.enqueue(chunk);
+		std::cout << "Initializing chunk worker pool with " << nThreads << " threads. " << std::endl;
+
+		for (int i = 0; i < nThreads; ++i)
+			m_threads.push_back(new std::thread(workerThreadFunction, this));
 	}
 
 	void awaitAll() const {
-		m_allTasksDone.wait(false);
+		using namespace std::chrono_literals;
+		//std::this_thread::sleep_for(1ms);
+
+		std::unique_lock<std::mutex> lock(m_chunksMutex);
+		m_done.wait(lock, [this] { return m_chunks.empty() || m_shutdown; });
 	}
 
-	unsigned threadCount() const {
-		return m_threads.size();
+	void processChunk(Chunk* chunk) {
+		enqueueChunk(chunk);
 	}
 
-	static ChunkWorkerPool& instance() {
-		static ChunkWorkerPool c_instance;
-		return c_instance;
+	void updateParams(Args... args) {
+		m_args = std::make_tuple(args...);
+	}
+
+	~ChunkWorkerPool() {
+		std::cout << "Joining threads. " << std::endl;
+
+		// Request threads to stop
+		shutdown();
+
+		// Join and clear threads
+		for (auto thread : m_threads) {
+			thread->join();
+			delete thread;
+		}
 	}
 
 private:
-	ChunkTaskQueue m_tasks;
-	std::vector<std::thread*> m_threads;
-	std::atomic_uint m_taskCount;
-	std::atomic_bool m_allTasksDone = true;
+	using cv = std::condition_variable;
 
-	Options m_paramOptions;
-	SimulationUpdateFunction m_paramUpdateFunction = nullptr;
-	bool m_paramDoDraw = true;
+	std::vector<std::thread*>	m_threads;
+	std::atomic_bool			m_shutdown = false;
 
-	static void threadLoop(ChunkWorkerPool* pool) {
-		while (true) {
-			Chunk* chunk = pool->m_tasks.dequeue();
+	std::queue<Chunk*>			m_chunks{};
+	mutable std::mutex			m_chunksMutex;
+	mutable cv					m_chunkCountCondition;
+	mutable cv					m_done;
 
-			chunk->process(pool->m_paramOptions, pool->m_paramUpdateFunction, pool->m_paramDoDraw);
-			--pool->m_taskCount;
+	std::tuple<Args...>			m_args;
 
-			pool->m_allTasksDone = pool->m_taskCount == 0;
-			pool->m_allTasksDone.notify_one();
+	Chunk* dequeueChunk() {
+		Chunk* res;
+
+		// Wait until queue is not empty
+		std::unique_lock<std::mutex> lock{ m_chunksMutex };
+		m_chunkCountCondition.wait(lock, [this] { return !m_chunks.empty() || m_shutdown; });
+
+		// Handle shutdown
+		if (m_shutdown)
+			return nullptr;
+
+		// Pop front of queue
+		res = m_chunks.front();
+		m_chunks.pop();
+		
+		return res;
+	}
+
+	void enqueueChunk(Chunk* chunk) {
+		std::unique_lock<std::mutex> lock{ m_chunksMutex };
+
+		m_chunks.push(chunk);
+
+		lock.unlock();
+		m_chunkCountCondition.notify_one();
+	}
+
+	void shutdown() {
+		m_shutdown = true;
+		m_chunkCountCondition.notify_all();
+	}
+
+	static void workerThreadFunction(ChunkWorkerPool* pool) {
+		while (!pool->m_shutdown) {
+			Chunk* chunk = pool->dequeueChunk();
+			
+			// Handle shutdown
+			if (chunk == nullptr)
+				break;
+
+			// Process chunk
+			std::apply(&Chunk::process, std::tuple_cat(std::make_tuple(chunk), pool->m_args));
+			
+			// Chunk processed
+			pool->m_done.notify_one();
 		}
 	}
+};
+
+template <typename... Args>
+inline constexpr auto makeChunkWorkerPool(void(Chunk::*)(Args...)) {
+	return std::make_shared<ChunkWorkerPool<Args...>>();
+}
+
+template <typename T>
+struct ChunkWorkerPoolT;
+
+template <typename... Args>
+struct ChunkWorkerPoolT<void(Chunk::*)(Args...)> {
+	using type = std::shared_ptr<ChunkWorkerPool<Args...>>;
 };
