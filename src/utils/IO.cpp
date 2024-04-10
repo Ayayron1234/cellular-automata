@@ -48,10 +48,10 @@ struct SDL_Instance {
 };
 
 void Render() {
-	// Update SDL texture with the output buffer data and 
-	// render the texture to the entire window
-	SDL_UpdateTexture(SDL.output.texture, nullptr, SDL.output.buffer, sizeof(IO::RGB) * SDL.windowWidth);
-	SDL_RenderCopy(SDL.renderer, SDL.output.texture, nullptr, nullptr);
+	//// Update SDL texture with the output buffer data and 
+	//// render the texture to the entire window
+	//SDL_UpdateTexture(SDL.output.texture, nullptr, SDL.output.buffer, sizeof(IO::RGB) * SDL.windowWidth);
+	//SDL_RenderCopy(SDL.renderer, SDL.output.texture, nullptr, nullptr);
 
 	// Render ImGui draw data
 	ImGui::Render();
@@ -69,6 +69,10 @@ void Render() {
 	// Clear the renderer
 	SDL_SetRenderDrawColor(SDL.renderer, 0, 0, 0, 255);
 	SDL_RenderClear(SDL.renderer);
+}
+
+SDL_Renderer* GetRenderer() {
+	return SDL.renderer;
 }
 
 void OutputBuffer::resize(int width, int height) {

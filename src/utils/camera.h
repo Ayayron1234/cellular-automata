@@ -30,4 +30,13 @@ struct Camera {
         };
     }
 
+    vec2 worldToScreen(Float windowWidth, Float windowHeight, vec2 pos) {
+        Float wph = windowWidth / windowHeight;
+
+        return {
+            (pos.x + position.x + (0.5 / zoom)) * zoom * windowWidth,
+            (pos.y + position.y + (0.5 / zoom)) * zoom * windowHeight,
+        };
+    }
+
 }; JSON_C(Camera, JSON_M(position), JSON_M(zoom))

@@ -108,6 +108,7 @@
     <ClInclude Include="src\simulation.h" />
     <ClInclude Include="src\simulation\cell.h" />
     <ClInclude Include="src\simulation\chunk.h" />
+    <ClInclude Include="src\simulation\chunk_view.h" />
     <ClInclude Include="src\simulation\chunk_worker.h" />
     <ClInclude Include="src\simulation\color_palette.h" />
     <ClInclude Include="src\simulation\common.h" />

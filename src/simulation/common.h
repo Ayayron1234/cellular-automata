@@ -18,6 +18,8 @@ struct CellCoord {
 	__host__ __device__
 	CellCoord(const CellCoord&) = default;
 	CellCoord(const ChunkCoord&) = delete;
+
+	operator vec2() { return vec2(x, y); }
 };
 
 struct ChunkCoord {
@@ -29,6 +31,8 @@ struct ChunkCoord {
 	__host__ __device__
 	ChunkCoord(const ChunkCoord&) = default;
 	ChunkCoord(const CellCoord&) = delete;
+
+	operator vec2() { return vec2(x, y); }
 
 	struct Hasher {
 		__host__ __device__

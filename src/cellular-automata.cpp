@@ -290,10 +290,11 @@ int main() {
     World world;
     world.load(worldPath);
 
-    auto rendererKernel = Kernel(drawWorld, new GlobalBuffer<IO::RGB>(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight()));
+    //auto rendererKernel = Kernel(drawWorld, new GlobalBuffer<IO::RGB>(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight()));
 
     Bitmap colorPaletteBitmap("data/color_palett.bmp");
     ColorPalette colorPalette(colorPaletteBitmap);
+    world.setPalette(&colorPalette);
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
@@ -394,10 +395,10 @@ int main() {
             // Render and draw to screen
             auto renderStart = std::chrono::high_resolution_clock::now();
 
-            if (IO::Resized())
-                rendererKernel.data().changeBuffer(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight());
+            //if (IO::Resized())
+                //rendererKernel.data().changeBuffer(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight());
 
-            rendererKernel.execute(world, g_options, colorPalette);
+            //rendererKernel.execute(world, g_options, colorPalette);
 
             IO::Render();
 

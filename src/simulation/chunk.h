@@ -1,9 +1,12 @@
 #pragma once
 #include "common.h"
+#include "color_palette.h"
 #include <mutex>
 #include "../device.h"
 
 class Options;
+
+class ChunkView;
 
 class Chunk {
 public:
@@ -17,16 +20,7 @@ public:
 	 * @return Cell - The Cell object at the specified coordinates.
 	 */
 	__host__ __device__
-	Cell getCell(coord_t x, coord_t y) const
-#ifndef __CUDA_ARCH__
-		;
-#else
-	{
-		if (empty() || !isCoordInside(x, y))
-			return Cell();
-		return m_deviceBuffer[coordToIndex(x, y)];
-	}
-#endif
+	Cell getCell(coord_t x, coord_t y) const;
 
 	/**
 	 * Retrieves the Cell at the specified CellCoord within the Chunk.
@@ -152,7 +146,11 @@ public:
 	 * @param options - The rendering and simulation options.
 	 * @param updateFunction - The function to update the simulation state, if provided.
 	 */
-	void process(Options options, SimulationUpdateFunction updateFunction, bool doDraw);
+	void process(Options options, SimulationUpdateFunction updateFunction);
+
+	void draw(Options options);
+
+	void render(Options options, ColorPalette* palette);
 
 	/**
 	 * Retrieves the ChunkCoord of the Chunk.
@@ -182,6 +180,11 @@ public:
 		return m_updated;
 	}
 
+	bool updatedSinceDraw() const {
+		// TODO: implement this
+		return m_updated;
+	}
+
 	void requestUpdate();
 
 	__host__ __device__
@@ -191,7 +194,6 @@ public:
 		, m_size(chunk.m_size)
 		, m_nonAirCount(chunk.m_nonAirCount)
 		, m_cells(chunk.m_cells)
-		, m_deviceBuffer(chunk.m_deviceBuffer)
 		, m_shouldUpdate(chunk.m_shouldUpdate)
 		, m_updated(chunk.m_updated)
 	{ }
@@ -202,7 +204,6 @@ public:
 		m_size = chunk.m_size;
 		m_nonAirCount = chunk.m_nonAirCount;
 		m_cells = chunk.m_cells;
-		m_deviceBuffer = chunk.m_deviceBuffer;
 		m_shouldUpdate = chunk.m_shouldUpdate;
 		m_updated = chunk.m_updated;
 		return *this;
@@ -217,11 +218,12 @@ private:
 	volatile unsigned m_nonAirCount = 0;	// Number of cells in chunk that are not air
 
 	Cell* m_cells = nullptr;    // Dynamic array storing individual Cell properties
-	DeviceBuffer<Cell> m_deviceBuffer;
 
 	bool m_shouldUpdate = true;
 	bool m_updated = true;
 	bool m_updatedOnEvenTick;
+
+	ChunkView* m_view = nullptr;
 
 	__host__ __device__
 	size_t coordToIndex(coord_t x, coord_t y) const {
@@ -233,30 +235,11 @@ private:
 		return coordToIndex(coord.x, coord.y);
 	}
 
-	__host__ __device__
-	DeviceBuffer<Cell> getDeviceBuffer() const {
-		return m_deviceBuffer;
-	}
-
 	void updateChunksNearCell(CellCoord coord);
-
-	void commitToDevice() {
-		if (empty())
-			return;
-
-		bool allocated = m_deviceBuffer.isAllocated();
-		if (!allocated)
-			m_deviceBuffer.alloc(CHUNK_SIZE * CHUNK_SIZE);
-
-		if (!allocated || updated())
-			m_deviceBuffer.uploadAsync(m_cells, CHUNK_SIZE * CHUNK_SIZE);
-	}
 
 	void checkForUpdates();
 
-	void allocate() {
-		m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
-	}
+	void allocate();
 
 	void clear() {
 		delete[] m_cells;

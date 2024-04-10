@@ -287,28 +287,32 @@ public:
 			&& m_minDrawnChunk.y <= coord.y && coord.y <= m_maxDrawnChunk.y;
 	}
 
-	void update(Options options, SimulationUpdateFunction updateFunction) {
-		// Update chunks without drawing them
-		updateImpl(options, updateFunction, false);
-	}
+	//void update(Options options, SimulationUpdateFunction updateFunction) {
+	//	// Update chunks without drawing them
+	//	updateImpl(options, updateFunction, false);
+	//}
 
-	void draw(Options options) {
-		bool drawnChunksChanged = prepareDrawnChunksBuffer(options, false);
+	//void draw(Options options) {
+	//	bool drawnChunksChanged = prepareDrawnChunksBuffer(options, false);
 
-		// If the screen moved draw chunks without updating them
-		if (drawnChunksChanged)
-			updateImpl(options, nullptr, true);
+	//	// If the screen moved draw chunks without updating them
+	//	if (drawnChunksChanged)
+	//		updateImpl(options, nullptr, true);
 
-		uploadDrawnChunksToDevice(drawnChunksChanged);
+	//	uploadDrawnChunksToDevice(drawnChunksChanged);
+	//}
+
+	void setPalette(ColorPalette* palette) {
+		m_palette = palette;
 	}
 
 	void updateAndDraw(Options options, SimulationUpdateFunction updateFunction) {
-		bool drawnChunksChanged = prepareDrawnChunksBuffer(options, true);
+		//bool drawnChunksChanged = prepareDrawnChunksBuffer(options, true);
 
 		// Update and draw chunks
 		updateImpl(options, updateFunction, true);
 
-		uploadDrawnChunksToDevice(drawnChunksChanged);
+		//uploadDrawnChunksToDevice(drawnChunksChanged);
 	}
 
 	bool isEvenTick() const {
@@ -324,16 +328,18 @@ public:
 		addChunkToDrawnChunks(chunk);
 	}
 
-	World() = default;
+	World() {
+		m_workers = std::make_shared<ChunkWorkerPool>(m_chunks);
+	};
 
 	World(const World& world) = default;
 
 private:
 	using ChunkMap = std::unordered_map<ChunkCoord, Chunk*, ChunkCoord::Hasher>;
-	using ProcessFnc = decltype(&Chunk::process);
-	using WorkerPool = ChunkWorkerPoolT<ProcessFnc>::type;
+	using WorkerPool = std::shared_ptr<ChunkWorkerPool>;
 
 	ChunkMap			m_chunks{};
+	ColorPalette*		m_palette = nullptr;
 
 	ChunkCoord			m_minDrawnChunk;
 	ChunkCoord			m_maxDrawnChunk;
@@ -342,7 +348,7 @@ private:
 
 	bool				m_evenTick;
 
-	WorkerPool			m_workers = makeChunkWorkerPool(&Chunk::process);
+	WorkerPool			m_workers;
 	
 #ifndef __CUDA_ARCH__
 	bool hasChunk(ChunkCoord coord) const {
@@ -356,21 +362,27 @@ private:
 #endif
 
 	void updateImpl(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
+		changeMinAndMaxDrawnChunks(options);
+
 		if (updateFunction != nullptr)
 			m_evenTick = !m_evenTick;
 		
-		m_workers->updateParams(options, updateFunction, doDraw);
-		for (auto& chunk : m_chunks)
-			//chunk.second->process(options, updateFunction, doDraw);
-			m_workers->processChunk(chunk.second);
+		auto updateTask = new ChunkWorkerTask(&Chunk::process);
+		updateTask->setArgs(options, updateFunction);
+		m_workers->execute(updateTask);
 
-		m_workers->awaitAll();
+		auto renderTask = new ChunkWorkerTask(&Chunk::render);
+		renderTask->setArgs(options, m_palette);
+		m_workers->execute(renderTask);
 
-		for (auto& chunk : m_chunks)
+		for (auto& chunk : m_chunks) {
 			if (chunk.second->empty()) {
 				m_chunks.erase(chunk.first);
 				break;
 			}
+			else
+				chunk.second->draw(options);
+		}
 	}
 
 	void addChunkToDrawnChunks(Chunk* chunk) {
@@ -381,40 +393,40 @@ private:
 		m_chunksToCommitToDevice[coord.y * (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) + coord.x] = *chunk;
 	}
 
-	// returns true when reallocated the drawnChunksBuffer
-	bool prepareDrawnChunksBuffer(Options options, bool clearChunks) {
-		size_t prevDrawnChunkCount = drawnChunkCount();
-		bool shouldReallocDrawnChunksBuffer = changeMinAndMaxDrawnChunks(options);
+	//// returns true when reallocated the drawnChunksBuffer
+	//bool prepareDrawnChunksBuffer(Options options, bool clearChunks) {
+	//	size_t prevDrawnChunkCount = drawnChunkCount();
+	//	bool shouldReallocDrawnChunksBuffer = changeMinAndMaxDrawnChunks(options);
 
-		if (shouldReallocDrawnChunksBuffer && drawnChunkCount() != prevDrawnChunkCount)
-			reallocDrawnChunksBuffer();
-		else if (clearChunks)
-			resetDrawnChunksBuffer();
+	//	if (shouldReallocDrawnChunksBuffer && drawnChunkCount() != prevDrawnChunkCount)
+	//		reallocDrawnChunksBuffer();
+	//	else if (clearChunks)
+	//		resetDrawnChunksBuffer();
 
-		return shouldReallocDrawnChunksBuffer;
-	}
+	//	return shouldReallocDrawnChunksBuffer;
+	//}
 
-	void uploadDrawnChunksToDevice(bool drawnChunksChanged) {
-		// Copy drawn chunks buffer to the device
-		if (!m_deviceChunks.isAllocated() || drawnChunksChanged)
-			m_deviceChunks.alloc(drawnChunkCount());
-		m_deviceChunks.upload(m_chunksToCommitToDevice, drawnChunkCount());
-	}
+	//void uploadDrawnChunksToDevice(bool drawnChunksChanged) {
+	//	// Copy drawn chunks buffer to the device
+	//	if (!m_deviceChunks.isAllocated() || drawnChunksChanged)
+	//		m_deviceChunks.alloc(drawnChunkCount());
+	//	m_deviceChunks.upload(m_chunksToCommitToDevice, drawnChunkCount());
+	//}
 
-	void reallocDrawnChunksBuffer() {
-		if (m_chunksToCommitToDevice != nullptr)
-			delete[] m_chunksToCommitToDevice;
+	//void reallocDrawnChunksBuffer() {
+	//	if (m_chunksToCommitToDevice != nullptr)
+	//		delete[] m_chunksToCommitToDevice;
 
-		m_chunksToCommitToDevice = new Chunk[drawnChunkCount() * sizeof(Chunk)];
-		//m_chunksToCommitToDevice = (Chunk*)calloc(drawnChunkCount(), sizeof(Chunk));
-	}
+	//	m_chunksToCommitToDevice = new Chunk[drawnChunkCount() * sizeof(Chunk)];
+	//	//m_chunksToCommitToDevice = (Chunk*)calloc(drawnChunkCount(), sizeof(Chunk));
+	//}
 
-	// Memsets the buffer to 0
-	void resetDrawnChunksBuffer() {
-		//for (int i = 0; i < drawnChunkCount(); ++i)
-		//	m_chunksToCommitToDevice[i] = Chunk();
-		memset(m_chunksToCommitToDevice, 0, drawnChunkCount() * sizeof(Chunk));
-	}
+	//// Memsets the buffer to 0
+	//void resetDrawnChunksBuffer() {
+	//	//for (int i = 0; i < drawnChunkCount(); ++i)
+	//	//	m_chunksToCommitToDevice[i] = Chunk();
+	//	memset(m_chunksToCommitToDevice, 0, drawnChunkCount() * sizeof(Chunk));
+	//}
 
 	// Returns true when value changed
 	bool changeMinAndMaxDrawnChunks(Options options) {

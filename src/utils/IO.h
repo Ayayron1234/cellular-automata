@@ -46,6 +46,8 @@ enum class WindowMode {
 
 void Render();
 
+SDL_Renderer* GetRenderer();
+
 /**
  * \brief 
  * Handles various SDL events, updating the SDL_Instance state accordingly.

@@ -1,5 +1,6 @@
 #include "chunk.h"
 #include "world.h"
+#include "chunk_view.h"
 #include "../utils/options.h"
 
 inline Cell Chunk::getCell(coord_t x, coord_t y) const {
@@ -56,19 +57,9 @@ void Chunk::swapCells(CellCoord a, CellCoord b) {
 	updateChunksNearCell(b);
 }
 
-void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
+void Chunk::process(Options options, SimulationUpdateFunction updateFunction) {
 	if (updateFunction != nullptr)
 		checkForUpdates();
-
-	if (doDraw) {
-		// Check whether the chunk will be drawn to the screen 
-		if (m_world->isChunkDrawn(m_coord)) {
-			commitToDevice();
-			m_world->drawChunk(this);
-		}
-		else
-			m_deviceBuffer.freeDevice();
-	}
 
 	if (updated() && updateFunction != nullptr) {
 		// Advance chunk simulation state
@@ -78,6 +69,22 @@ void Chunk::process(Options options, SimulationUpdateFunction updateFunction, bo
 		if (m_nonAirCount == 0)
 			clear();
 	}
+}
+
+void Chunk::draw(Options options) {
+	//std::cout << std::boolalpha << m_world->isChunkDrawn(m_coord) << std::endl;
+
+	//if (!m_world->isChunkDrawn(m_coord))
+	//	return;
+
+	m_view->draw(this, options);
+}
+
+void Chunk::render(Options options, ColorPalette* palette) {
+	//if (!m_world->isChunkDrawn(m_coord))
+	//	return;
+
+	m_view->render(this, options, palette);
 }
 
 void Chunk::requestUpdate() {
@@ -96,4 +103,11 @@ void Chunk::checkForUpdates() {
 	m_updated = m_shouldUpdate;
 	if (m_world->isEvenTick() != m_updatedOnEvenTick)
 		m_shouldUpdate = false;
+}
+
+void Chunk::allocate() {
+	m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
+	
+	if (m_view == nullptr)
+		m_view = new ChunkView();
 }
