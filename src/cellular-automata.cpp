@@ -198,8 +198,8 @@ void UpdateChunk(Options options, Chunk& chunk) {
     bool evenTick = (g_simulationStepCount) % 2;
     char step = rand() % 2 == 0 ? 3 : 5;
     for (int _x = rand() % step; _x < CHUNK_SIZE * step; _x += step)
-    for (int _y = 0; _y < CHUNK_SIZE; ++_y)
-    //for (int _y = CHUNK_SIZE - 1; _y >= 0; --_y)
+    //for (int _y = 0; _y < CHUNK_SIZE; ++_y)
+    for (int _y = CHUNK_SIZE - 1; _y >= 0; --_y)
     {
         int x = x0 + (_x % CHUNK_SIZE);
         int y = y0 + _y;
