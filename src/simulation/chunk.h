@@ -2,26 +2,13 @@
 #include "common.h"
 #include "color_palette.h"
 #include <mutex>
+#include "chunk_state.h"
 #include "../device.h"
 
 class Options;
 
-class ChunkView;
-
 class Chunk {
 public:
-	/**
-	 * Retrieves the Cell at the specified coordinates within the Chunk.
-	 * Returns the uniform cell if the Chunk is uniform; otherwise, retrieves the individual cell.
-	 * If the coordinates are outside the Chunk, delegates the task to the World.
-	 *
-	 * @param x - The x-coordinate of the Cell.
-	 * @param y - The y-coordinate of the Cell.
-	 * @return Cell - The Cell object at the specified coordinates.
-	 */
-	__host__ __device__
-	Cell getCell(coord_t x, coord_t y) const;
-
 	/**
 	 * Retrieves the Cell at the specified CellCoord within the Chunk.
 	 * Delegates the task to the overloaded getCell method with individual x and y coordinates.
@@ -29,22 +16,7 @@ public:
 	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @return Cell - The Cell object at the specified coordinates.
 	 */
-	__host__ __device__
-	Cell getCell(CellCoord coord) const {
-		return getCell(coord.x, coord.y);
-	}
-
-	/**
-	 * Sets the properties of the Cell at the specified coordinates within the Chunk.
-	 * If the Chunk is uniform and the specified coordinates are inside the Chunk,
-	 * the uniformity is broken, and a new dynamic array is allocated for individual cell storage.
-	 * Updates the cell type counts accordingly.
-	 *
-	 * @param x - The x-coordinate of the Cell.
-	 * @param y - The y-coordinate of the Cell.
-	 * @param cell - The Cell object containing the new properties.
-	 */
-	void setCell(coord_t x, coord_t y, Cell cell);
+	Cell getCell(const CellCoord& coord) const;
 
 	/**
 	 * Sets the properties of the Cell at the specified CellCoord within the Chunk.
@@ -53,26 +25,13 @@ public:
 	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @param cell - The Cell object containing the new properties.
 	 */
-	void setCell(CellCoord coord, Cell cell) {
-		setCell(coord.x, coord.y, cell);
-	}
+	void setCell(const CellCoord& coord, Cell cell);
 
-	void markCellAsUpdated(CellCoord coord, bool updatedOnEvenTick) {
-		if (isCoordInside(coord))
-			m_cells[coordToIndex(coord)].updatedOnEvenTick = updatedOnEvenTick;
-	}
+	void markCellAsUpdated(const CellCoord& coord) {
+		if (!isCoordInside(coord))
+			return;
 
-	/**
-	 * Checks whether the specified coordinates (x, y) are within the boundaries of the current Chunk.
-	 *
-	 * @param x - The x-coordinate to be checked.
-	 * @param y - The y-coordinate to be checked.
-	 * @return bool - Returns true if the coordinates are inside the Chunk, false otherwise.
-	 */
-	__host__ __device__
-	bool isCoordInside(coord_t x, coord_t y) const {
-		return 0 <= (x - m_coord.x * (coord_t)CHUNK_SIZE) && (x - m_coord.x * (coord_t)CHUNK_SIZE) < CHUNK_SIZE
-			&& 0 <= (y - m_coord.y * (coord_t)CHUNK_SIZE) && (y - m_coord.y * (coord_t)CHUNK_SIZE) < CHUNK_SIZE;
+		m_cells[coordToIndex(coord)].updatedOnEvenTick = evenTick();
 	}
 
 	/**
@@ -81,9 +40,9 @@ public:
 	 * @param coord - The CellCoord to be checked.
 	 * @return bool - Returns true if the coordinates of the CellCoord are inside the Chunk, false otherwise.
 	 */
-	__host__ __device__
-	bool isCoordInside(CellCoord coord) const {
-		return isCoordInside(coord.x, coord.y);
+	bool isCoordInside(const CellCoord& coord) const {
+		return 0 <= (coord.x - m_coord.x * (coord_t)CHUNK_SIZE) && (coord.x - m_coord.x * (coord_t)CHUNK_SIZE) < CHUNK_SIZE
+			&& 0 <= (coord.y - m_coord.y * (coord_t)CHUNK_SIZE) && (coord.y - m_coord.y * (coord_t)CHUNK_SIZE) < CHUNK_SIZE;
 	}
 
 	/**
@@ -101,7 +60,8 @@ public:
 		os.write((char*)&m_coord.y, sizeof(m_coord.y));
 
 		// Write nonAir cell count
-		os.write((char*)&m_nonAirCount, sizeof(m_nonAirCount));
+		m_state->serialise(os);
+		//os.write((char*)&m_nonAirCount, sizeof(m_nonAirCount));
 
 		// Write cells
 		os.write((char*)m_cells, CHUNK_SIZE * CHUNK_SIZE * sizeof(Cell));
@@ -113,23 +73,7 @@ public:
 	 *
 	 * @param is - The input file stream containing the serialized data.
 	 */
-	void deserialise(std::ifstream& is) {
-		// Read chunk size
-		decltype(m_size) size;
-		is.read((char*)&size, sizeof(m_size));
-		if (size != m_size)
-			return;
-
-		// Read coordinates
-		is.read((char*)&m_coord.x, sizeof(m_coord.x));
-		is.read((char*)&m_coord.y, sizeof(m_coord.y));
-
-		// Read nonAir cell count
-		is.read((char*)&m_nonAirCount, sizeof(m_nonAirCount));
-
-		// Read cells
-		is.read((char*)m_cells, CHUNK_SIZE * CHUNK_SIZE * sizeof(Cell));
-	}
+	static Chunk* deserialise(std::ifstream& is, World* world);
 
 	/**
 	 * Swaps the properties of the Cells at the specified CellCoords within the Chunk.
@@ -138,7 +82,7 @@ public:
 	 * @param a - The first CellCoord specifying the coordinates of the first Cell to be swapped.
 	 * @param b - The second CellCoord specifying the coordinates of the second Cell to be swapped.
 	 */
-	void swapCells(CellCoord a, CellCoord b);
+	void swapCells(const CellCoord& a, const CellCoord& b);
 
 	/**
 	 * Processes the Chunk, checking its visibility, updating uniformity, and advancing simulation state if specified.
@@ -149,8 +93,6 @@ public:
 	void process(Options options, SimulationUpdateFunction updateFunction);
 
 	void draw(Options options);
-
-	void render(Options options, ColorPalette* palette);
 
 	/**
 	 * Retrieves the ChunkCoord of the Chunk.
@@ -170,108 +112,66 @@ public:
 		return CellCoord(m_coord.x * CHUNK_SIZE, m_coord.y * CHUNK_SIZE);
 	}
 
-	__host__ __device__
-	bool empty() const {
-		return m_cells == nullptr;
-	}
+	bool isCellUpdated(Cell cell) const;
 
-	__host__ __device__
-	bool updated() const {
-		return m_updated;
+	bool evenTick() const;
+
+#ifdef _DEBUG
+	void _dbgInsertBreakOnProcess() {
+		m_dbgBreakOnProcess = true;
+	}
+#endif
+
+	bool empty() const {
+		return m_state->empty();
 	}
 
 	bool updatedSinceDraw() const {
-		// TODO: implement this
-		return m_updated;
+		return m_state->updatedSinceDraw();
 	}
 
-	void requestUpdate();
+	void requestUpdate() {
+		m_state->requestUpdate();
+	}
 
-	__host__ __device__
-	Chunk(const Chunk& chunk) 
-		: m_world(chunk.m_world)
-		, m_coord(chunk.m_coord)
-		, m_size(chunk.m_size)
-		, m_nonAirCount(chunk.m_nonAirCount)
-		, m_cells(chunk.m_cells)
-		, m_shouldUpdate(chunk.m_shouldUpdate)
-		, m_updated(chunk.m_updated)
-	{ }
+	Chunk& operator=(const Chunk&) = delete;
+	Chunk(const Chunk&) = delete;
 
-	Chunk& operator=(const Chunk& chunk) {
-		m_world = chunk.m_world;
-		m_coord = chunk.m_coord;
-		m_size = chunk.m_size;
-		m_nonAirCount = chunk.m_nonAirCount;
-		m_cells = chunk.m_cells;
-		m_shouldUpdate = chunk.m_shouldUpdate;
-		m_updated = chunk.m_updated;
-		return *this;
+	~Chunk() {
+		if (m_cells)	delete[] m_cells;	m_cells = nullptr;
+		if (m_view)		delete m_view;		m_view = nullptr;
+		if (m_state)	delete m_state;		m_state = nullptr;
 	}
 
 private:
-	World*		m_world;	// Pointer to the World containing the Chunk
-	ChunkCoord	m_coord;	// Coordinates of the Chunk within the World
-	size_t		m_size;     // Size of the Chunk
+	World*		m_world;			// Pointer to the World containing the Chunk
+	ChunkCoord	m_coord;			// Coordinates of the Chunk within the World
+	size_t		m_size;				// Size of the Chunk
 
-	std::mutex m_airCountMutex;
-	volatile unsigned m_nonAirCount = 0;	// Number of cells in chunk that are not air
+	Cell*		m_cells = nullptr;  // Array storing individual Cell properties
 
-	Cell* m_cells = nullptr;    // Dynamic array storing individual Cell properties
+	ChunkState* m_state = nullptr;
+	ChunkView*	m_view = nullptr;
 
-	bool m_shouldUpdate = true;
-	bool m_updated = true;
-	bool m_updatedOnEvenTick;
+#ifdef _DEBUG
+	bool		m_dbgBreakOnProcess = false;
+#endif
 
-	ChunkView* m_view = nullptr;
-
-	__host__ __device__
-	size_t coordToIndex(coord_t x, coord_t y) const {
-		return (y - m_coord.y * CHUNK_SIZE) * CHUNK_SIZE + (x - m_coord.x * CHUNK_SIZE);
+	size_t coordToIndex(const CellCoord& coord) const {
+		return (coord.y - m_coord.y * CHUNK_SIZE) * CHUNK_SIZE + (coord.x - m_coord.x * CHUNK_SIZE);
 	}
 
-	__host__ __device__
-	size_t coordToIndex(CellCoord coord) const {
-		return coordToIndex(coord.x, coord.y);
-	}
+	void updateChunksNearCell(const CellCoord& coord);
 
-	void updateChunksNearCell(CellCoord coord);
+	Chunk(World* world, ChunkCoord coord);
 
-	void checkForUpdates();
-
-	void allocate();
-
-	void clear() {
-		delete[] m_cells;
-		m_cells = nullptr;
-	}
-
-	Chunk() 
-		: m_world(nullptr)
-		, m_size(CHUNK_SIZE)
-	{ }
-
-	Chunk(World* world)
-		: m_world(world)
-		, m_size(CHUNK_SIZE)
-	{
-		allocate();
-	}
-
-	Chunk(World* world, ChunkCoord coord)
-		: m_world(world)
-		, m_coord(coord)
-		, m_size(CHUNK_SIZE)
-	{
-		allocate();
-	}
-
-	static std::string chunkFileName(ChunkCoord coord) {
+	static std::string chunkFileName(const ChunkCoord& coord) {
 		std::stringstream sstream;
 		sstream << "/chunk" << coord.x << ";" << coord.y << ".bin";
 		return sstream.str();
 	}
 
 	friend class World;
+	friend class ChunkView;
 	friend Json& Json::operator=<Chunk>(Chunk chunk);
 };

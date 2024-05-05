@@ -2,9 +2,8 @@
 #include "vec2.h"
 
 #include "imgui/imgui.h"
-#include "imgui/backends/imgui_impl_sdl2.h"
-#include "imgui/backends/imgui_impl_sdlrenderer2.h"
-#include "imgui/imgui_stdlib.h"
+#include "imgui/imgui_impl_sdl2.h"
+#include "imgui/backends/imgui_impl_opengl3.h"
 
 #include <iostream>
 
@@ -46,8 +45,6 @@ enum class WindowMode {
 
 void Render();
 
-SDL_Renderer* GetRenderer();
-
 /**
  * \brief 
  * Handles various SDL events, updating the SDL_Instance state accordingly.
@@ -60,7 +57,7 @@ void HandleEvents();
  */
 void Quit();
 
-void OpenWindow(int width, int height);
+bool OpenWindow(int width, int height);
 
 bool Resized();
 
@@ -98,13 +95,6 @@ float GetMouseWheel();
 
 long int GetTicks();
 
-/**
- * Gets the output buffer for rendering graphics.
- *
- * @return A pointer to the RGB buffer.
- */
-RGB* GetOutputBuffer();
-
 int GetWindowWidth();
 
 int GetWindowHeight();
@@ -119,8 +109,6 @@ bool FileDropped();
 const std::wstring& GetDroppedFilePath();
 
 void ResizeWindow(int width, int height);
-
-void DrawRect(int x, int y, int w, int h, RGB color);
 
 } // namespace IO
 

@@ -3,43 +3,68 @@
 #include "chunk_view.h"
 #include "../utils/options.h"
 
-inline Cell Chunk::getCell(coord_t x, coord_t y) const {
-	if (isCoordInside(x, y)) {
+#ifdef _DEBUG 
+#define DBG_BREAK_PROCESS if (m_dbgBreakOnProcess) { __debugbreak(); m_dbgBreakOnProcess = false; }
+#else
+#define DBG_BREAK_PROCESS
+#endif // _DEBUG
+
+inline Cell Chunk::getCell(const CellCoord& coord) const {
+	if (isCoordInside(coord)) {
 		if (empty())
 			return Cell();
-		return m_cells[coordToIndex(x, y)];
+		return m_cells[coordToIndex(coord)];
 	}
-	return m_world->getCell(x, y);
+	return m_world->getCell(coord);
 }
 
-void Chunk::setCell(coord_t x, coord_t y, Cell cell) {
-	if (isCoordInside(x, y)) {
-		// Allocate chunk if empty
-		if (empty())
-			allocate();
-
-		// Tell the chunk to update
-		requestUpdate();
-
+void Chunk::setCell(const CellCoord& coord, Cell cell) {
+	if (isCoordInside(coord)) {
 		// Access the specified Cell position within the Chunk
-		Cell& cellPos = m_cells[coordToIndex(x, y)];
+		Cell& cellPos = m_cells[coordToIndex(coord)];
 
 		// Update cell and cell type counts
-		m_airCountMutex.lock();
-		m_nonAirCount += cellPos.type == Cell::Type::AIR;
+		Cell::Type prevType = cellPos.type;
+		Cell::Type currentType = cell.type;
 		cellPos = cell;
-		m_nonAirCount -= cellPos.type == Cell::Type::AIR;
-		m_airCountMutex.unlock();
+		m_state->cellSet(prevType, currentType);
 
 		// Update neighbouring chunk if the cell is near chunk edge
-		updateChunksNearCell({ x, y });
+		updateChunksNearCell(coord);
 	}
 	else 
 		// Delegate the task to the World if the coordinates are outside the Chunk
-		m_world->setCell(x, y, cell);
+		m_world->setCell(coord, cell);
 }
 
-void Chunk::swapCells(CellCoord a, CellCoord b) {
+Chunk* Chunk::deserialise(std::ifstream& is, World* world) {
+	// Read chunk size
+	decltype(m_size) size;
+	is.read((char*)&size, sizeof(m_size));
+	if (size != CHUNK_SIZE)
+		throw;
+
+	// Read coordinates
+	ChunkCoord coord;
+	is.read((char*)&coord.x, sizeof(coord.x));
+	is.read((char*)&coord.y, sizeof(coord.y));
+
+	// Create and allocate chunk
+	Chunk* chunk = new Chunk(world, coord);
+
+	// Read nonAir cell count
+	chunk->m_state->deserialise(is);
+
+	// Read cells
+	is.read((char*)chunk->m_cells, CHUNK_SIZE * CHUNK_SIZE * sizeof(Cell));
+
+	// Upate view position
+	chunk->m_view->updatePosition();
+
+	return chunk;
+}
+
+void Chunk::swapCells(const CellCoord& a, const CellCoord& b) {
 	// If atleast one of the coords is outside, delegate the task to world.
 	if (!isCoordInside(a)) { m_world->swapCells(a, b); return; }
 	if (!isCoordInside(b)) { m_world->swapCells(a, b); return; }
@@ -58,56 +83,44 @@ void Chunk::swapCells(CellCoord a, CellCoord b) {
 }
 
 void Chunk::process(Options options, SimulationUpdateFunction updateFunction) {
-	if (updateFunction != nullptr)
-		checkForUpdates();
+	DBG_BREAK_PROCESS
 
-	if (updated() && updateFunction != nullptr) {
+	if (m_state->shouldUpdate()) {
 		// Advance chunk simulation state
 		updateFunction(options, *this);
-
-		// Update lear chunk if it is empty
-		if (m_nonAirCount == 0)
-			clear();
 	}
+
+	m_state->nextState();
 }
 
 void Chunk::draw(Options options) {
-	//std::cout << std::boolalpha << m_world->isChunkDrawn(m_coord) << std::endl;
-
-	//if (!m_world->isChunkDrawn(m_coord))
-	//	return;
-
-	m_view->draw(this, options);
+	m_view->draw(options);
+	m_state->drawn();
 }
 
-void Chunk::render(Options options, ColorPalette* palette) {
-	//if (!m_world->isChunkDrawn(m_coord))
-	//	return;
-
-	m_view->render(this, options, palette);
+bool Chunk::isCellUpdated(Cell cell) const {
+	return m_world->isCellUpdated(cell);
 }
 
-void Chunk::requestUpdate() {
-	m_shouldUpdate = true;
-	m_updatedOnEvenTick = m_world->isEvenTick();
+bool Chunk::evenTick() const {
+	return m_world->evenTick();
 }
 
-void Chunk::updateChunksNearCell(CellCoord coord) {
-	if (abs(coord.x) % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x - 1, m_coord.y });
-	if (abs(coord.y) % CHUNK_SIZE == 0) m_world->requestChunkUpdate({ m_coord.x, m_coord.y - 1 });
-	if (abs(coord.x) % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x + 1, m_coord.y });
-	if (abs(coord.y) % CHUNK_SIZE == CHUNK_SIZE - 1) m_world->requestChunkUpdate({ m_coord.x, m_coord.y + 1 });
+void Chunk::updateChunksNearCell(const CellCoord& coord) {
+	CellCoord firstCell = getFirstCellCoord();
+
+	if ((coord.x - firstCell.x) == 0)				m_world->requestChunkUpdate({ m_coord.x - 1, m_coord.y });
+	if ((coord.y - firstCell.y) == 0)				m_world->requestChunkUpdate({ m_coord.x, m_coord.y - 1 });
+	if ((coord.x - firstCell.x) == CHUNK_SIZE - 1)  m_world->requestChunkUpdate({ m_coord.x + 1, m_coord.y });
+	if ((coord.y - firstCell.y) == CHUNK_SIZE - 1)  m_world->requestChunkUpdate({ m_coord.x, m_coord.y + 1 });
 }
 
-void Chunk::checkForUpdates() {
-	m_updated = m_shouldUpdate;
-	if (m_world->isEvenTick() != m_updatedOnEvenTick)
-		m_shouldUpdate = false;
-}
+Chunk::Chunk(World* world, ChunkCoord coord) {
+	m_world = world;
+	m_coord = coord;
+	m_size	= CHUNK_SIZE;
 
-void Chunk::allocate() {
 	m_cells = new Cell[CHUNK_SIZE * CHUNK_SIZE];
-	
-	if (m_view == nullptr)
-		m_view = new ChunkView();
+	m_view	= new ChunkView(this);
+	m_state = new ChunkState();
 }

@@ -1,8 +1,7 @@
 #include "IO.h"
 #include <fstream>
 
-#include <SDL2/SDL.h>
-#undef main
+#include "../graphics_headers.h"
 
 #define SDL SDL_Instance::instance()
 
@@ -16,23 +15,14 @@ const wchar_t* GetWC(const char* c) {
 
 namespace IO {
 
-struct OutputBuffer {
-	RGB* buffer = nullptr;
-	SDL_Texture* texture;
-
-	void resize(int width, int height);
-};
-
 struct SDL_Instance {
-	SDL_Renderer* renderer = nullptr;
+	SDL_GLContext glContext;
 
 	long int tickCount = 0;
 
 	SDL_Window* window = nullptr;
 	int windowWidth, windowHeight;
 	bool didResize = false;
-
-	OutputBuffer output;
 
 	Uint8 mouseButtons = 0;
 	Uint8 prevMouseButtons = 0;
@@ -47,40 +37,32 @@ struct SDL_Instance {
 	static SDL_Instance& instance();
 };
 
-void Render() {
-	//// Update SDL texture with the output buffer data and 
-	//// render the texture to the entire window
-	//SDL_UpdateTexture(SDL.output.texture, nullptr, SDL.output.buffer, sizeof(IO::RGB) * SDL.windowWidth);
-	//SDL_RenderCopy(SDL.renderer, SDL.output.texture, nullptr, nullptr);
-
+void endFrame() {
 	// Render ImGui draw data
 	ImGui::Render();
-	ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-	// Present the rendered frame
-	SDL_RenderPresent(SDL.renderer);
+	// Swap buffers
+	SDL_GL_SwapWindow(SDL.window);
 
-	// Start a new frame for ImGui rendering
-	ImGui_ImplSDLRenderer2_NewFrame();
+	// Clear buffer
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+void beginFrame() {
+	// Start the Dear ImGui frame
+	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
 	ImGui::NewFrame();
 	ImGui::DockSpaceOverViewport((const ImGuiViewport*)0, ImGuiDockNodeFlags_PassthruCentralNode);
 
-	// Clear the renderer
-	SDL_SetRenderDrawColor(SDL.renderer, 0, 0, 0, 255);
-	SDL_RenderClear(SDL.renderer);
+	glViewport(0, 0, SDL.windowWidth, SDL.windowHeight);
 }
 
-SDL_Renderer* GetRenderer() {
-	return SDL.renderer;
-}
-
-void OutputBuffer::resize(int width, int height) {
-	delete[] buffer;
-	SDL_DestroyTexture(texture);
-
-	buffer = new RGB[width * height];
-	texture = SDL_CreateTexture(SDL.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, width, height);
+void Render() {
+	endFrame();
+	beginFrame();
 }
 
 void IO::HandleEvents() {
@@ -96,8 +78,6 @@ void IO::HandleEvents() {
 	SDL_GetWindowSize(SDL.window, &newWidth, &newHeight);
 	SDL.didResize = (newWidth != SDL.windowWidth || newHeight != SDL.windowHeight);
 	if (SDL.didResize) {
-		SDL.output.resize(newWidth, newHeight);
-
 		SDL.windowWidth = newWidth;
 		SDL.windowHeight = newHeight;
 	}
@@ -134,20 +114,53 @@ void IO::HandleEvents() {
 }
 
 void Quit() {
-	SDL_DestroyRenderer(SDL.renderer);
 	SDL_DestroyWindow(SDL.window);
 	SDL_Quit();
 }
 
-void OpenWindow(int width, int height) {
+bool OpenWindow(int width, int height) {
+	std::cout << "Opening window." << std::endl;
+
 	SDL.windowWidth = width;
 	SDL.windowHeight = height;
 
 	// Init SDL and open a window
 	SDL_Init(SDL_INIT_EVERYTHING);
 
-	SDL.window = SDL_CreateWindow("GPGPU", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SDL.windowWidth, SDL.windowHeight, SDL_WINDOW_RESIZABLE | SDL_RENDERER_ACCELERATED);
-	SDL.renderer = SDL_CreateRenderer(SDL.window, -1, SDL_RENDERER_ACCELERATED);
+	// Create window
+	SDL.window = SDL_CreateWindow("Falling Sand Automata", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 
+								  SDL.windowWidth, SDL.windowHeight, SDL_WINDOW_RESIZABLE | SDL_RENDERER_ACCELERATED);
+
+	// Use OpenGL 3.3
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+	// Create opengl context
+	SDL.glContext = SDL_GL_CreateContext(SDL.window);
+	if (SDL.glContext == nullptr) {
+		std::cerr << "OpenGL context could not be created! SDL Error: " << SDL_GetError() << std::endl;
+		return false;
+	}
+	SDL_GL_MakeCurrent(SDL.window, SDL.glContext);
+
+	// Initialize GLEW after creating OpenGL context
+	glewExperimental = GL_TRUE;
+	GLenum glewError = glewInit();
+	if (glewError != GLEW_OK) {
+		std::cerr << "Error initializing GLEW! " << glewGetErrorString(glewError) << std::endl;
+		return false;
+	}
+	// Remove error caused by glewExperimental
+	glGetError();
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Use Vsync
+	if (SDL_GL_SetSwapInterval(0) < 0) {
+		std::cerr << "Warning: Unable to set VSync! SDL Error: " << SDL_GetError() << std::endl;
+	}
 
 	// Init keyboard state
 	SDL.keyboardState = SDL_GetKeyboardState(&SDL.keyboardStateArraySize);
@@ -163,18 +176,13 @@ void OpenWindow(int width, int height) {
 
 	ImGui::StyleColorsClassic();
 
-	ImGui_ImplSDL2_InitForSDLRenderer(SDL.window, SDL.renderer);
-	ImGui_ImplSDLRenderer2_Init(SDL.renderer);
+	ImGui_ImplSDL2_InitForOpenGL(SDL.window, SDL.glContext);
+	ImGui_ImplOpenGL3_Init("#version 330");
 
-	// Init output buffer
-	SDL.output.texture = SDL_CreateTexture(SDL.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, SDL.windowWidth, SDL.windowHeight);
-	SDL.output.buffer = new RGB[width * height];
 
-	// Start first frame
-	ImGui_ImplSDLRenderer2_NewFrame();
-	ImGui_ImplSDL2_NewFrame();
-	ImGui::NewFrame();
-	ImGui::DockSpaceOverViewport((const ImGuiViewport*)0, ImGuiDockNodeFlags_PassthruCentralNode);
+	beginFrame();
+
+	return true;
 }
 
 bool Resized() {
@@ -250,7 +258,7 @@ bool KeyReleased(uint8_t key) {
 }
 
 vec2 NormalizePixel(int x, int y) {
-	return { (2.f * x) / (Float)SDL.windowWidth - 1.f, ((2.f * y) / (Float)SDL.windowHeight - 1.f) };
+	return { (2.f * x) / (Float)SDL.windowWidth - 1.f, ((- 2.f * y) / (Float)SDL.windowHeight + 1.f) };
 }
 
 vec2 NormalizePixel(vec2 pos) {
@@ -271,10 +279,6 @@ long int GetTicks() {
 	return SDL.tickCount;
 }
 
-RGB* GetOutputBuffer() {
-	return SDL.output.buffer;
-}
-
 int GetWindowWidth() {
 	return SDL.windowWidth;
 }
@@ -292,14 +296,7 @@ const std::wstring& GetDroppedFilePath() {
 }
 
 void ResizeWindow(int width, int height) {
-	SDL.output.resize(width, height);
 	SDL_SetWindowSize(SDL.window, width, height);
-}
-
-void DrawRect(int x, int y, int w, int h, RGB color) {
-	SDL_SetRenderDrawColor(SDL.renderer, color.r, color.g, color.b, color.a);
-	SDL_Rect rect{ x, y, w, h };
-	SDL_RenderDrawRect(SDL.renderer, &rect);
 }
 
 inline SDL_Instance& SDL {

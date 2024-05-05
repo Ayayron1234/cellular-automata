@@ -6,6 +6,8 @@
 
 #define _MAX_TYPE_COUNT ~((unsigned char)-1 << s_typeBitCount)
 
+class Chunk;
+
 // In order to improve Cell size change _CELL_BITS_T to find best alignment. 
 class Cell {
 private:
@@ -53,25 +55,27 @@ public:
 
 	union {
 		struct {
+			Type type : s_typeBitCount;						// The type and form of the cell.
+			unsigned _CELL_BITS_T shade : 6;				
 			unsigned _CELL_BITS_T updatedOnEvenTick : 1;	// Indicates weather the cell was last updated on an even number tick.
-			Type type : s_typeBitCount;							// The type and form of the cell.
 			_CELL_BITS_T velocityX : s_velocityBitCount;
 			_CELL_BITS_T velocityY : s_velocityBitCount;
-			unsigned _CELL_BITS_T shade : 6;
 		};
 
 		SandProperties sand;
 		WaterProperties water;
 	};
 
-	__host__ __device__
 	Cell() {
 		memset(this, 0, sizeof(*this));
 	}
 
-	Cell(const Json& json);
+	static void update(Cell cell, Chunk& chunk, int x, int y);
 
-	__device__ __host__
+	static void movePowder(Cell cell, Chunk& chunk, int x, int y);
+
+	static void moveLiquid(Cell cell, Chunk& chunk, int x, int y);
+
 	static Cell create(Type type);
 
 	Form form() const {
@@ -92,19 +96,6 @@ private:
 		return (EnumBase)-1 << s_typeBitCount - s_typeFormBitCounts[(EnumBase)type >> (s_typeBitCount - 1)];
 	}
 };
-
-template <>
-inline Json& Json::operator=(Cell chunk) {
-	*this = Json::CreateEmptyArray();
-	for (int i = 0; i < sizeof(Cell); i++)
-		this->array.push_back(Json(((unsigned char*)&chunk)[i]));
-	return *this;
-}
-
-inline Cell::Cell(const Json& json) {
-	for (int i = 0; i < sizeof(Cell); i++)
-		((unsigned char*)this)[i] = json.array.at(i);
-}
 
 namespace SimValues {
 

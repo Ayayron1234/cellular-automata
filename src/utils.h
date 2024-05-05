@@ -6,6 +6,7 @@
 #include "utils/ExternalResource.h"
 #include "utils/IO.h"
 #include "utils/bitmap.h"
+#include "utils/file_watcher.h"
 
 #include <chrono>
 

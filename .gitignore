@@ -6,3 +6,6 @@ options.json
 imgui.ini
 gpgpu.vcxproj.filters
 /data/worlds
+/data/options.json
+/cellular.FBCE5446
+imgui.ini

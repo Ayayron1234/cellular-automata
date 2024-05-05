@@ -21,6 +21,18 @@ public:
 		return m_buffer[(unsigned)cell.type * m_width + cell.shade];
 	}
 
+	IO::RGB* getBuffer() {
+		return m_buffer;
+	}
+
+	const IO::RGB* getBuffer() const {
+		return m_buffer;
+	}
+
+	vec2 getSize() const {
+		return { (Float)m_width, (Float)m_height };
+	}
+
 private:
 	unsigned m_width = 0;
 	unsigned m_height = 0;

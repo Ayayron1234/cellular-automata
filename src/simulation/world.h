@@ -10,58 +10,18 @@ public:
 	 * Retrieves the Cell at the specified coordinates within the World.
 	 * Delegates the task to the corresponding Chunk if it exists; otherwise, returns a default Cell.
 	 *
-	 * @param x - The x-coordinate of the Cell.
-	 * @param y - The y-coordinate of the Cell.
+	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @return Cell - The Cell object at the specified coordinates.
-	*/
-	__host__ __device__
-	Cell getCell(coord_t x, coord_t y) const {
-		ChunkCoord chunkCoord = chunkCoordOf(x, y);
-		
+	 */
+	Cell getCell(const CellCoord& coord) const {
+		ChunkCoord chunkCoord = coord.getChunkCoord();
+
 		// Check if the corresponding Chunk exists
 		if (!hasChunk(chunkCoord))
 			return SimValues::Air();
 
 		// Delegate the task to the corresponding Chunk
-#ifndef __CUDA_ARCH__
-		return m_chunks.at(chunkCoord)->getCell(x, y);
-#else
-		ChunkCoord coord;
-		coord.x = chunkCoord.x - m_minDrawnChunk.x;
-		coord.y = chunkCoord.y - m_minDrawnChunk.y;
-		return m_deviceChunks[coord.y * (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) + coord.x].getCell(x, y);
-#endif
-	}
-
-	/**
-	 * Retrieves the Cell at the specified CellCoord within the World.
-	 * Delegates the task to the overloaded getCell method with individual x and y coordinates.
-	 *
-	 * @param coord - The CellCoord specifying the coordinates of the Cell.
-	 * @return Cell - The Cell object at the specified coordinates.
-	 */
-	__host__ __device__
-	Cell getCell(CellCoord coord) const {
-		return getCell(coord.x, coord.y);
-	}
-
-	/**
-	 * Sets the properties of the Cell at the specified coordinates within the World.
-	 * Delegates the task to the corresponding Chunk if it exists; otherwise, creates a new Chunk and sets the Cell.
-	 *
-	 * @param x - The x-coordinate of the Cell.
-	 * @param y - The y-coordinate of the Cell.
-	 * @param cell - The Cell object containing the new properties.
-	 */
-	void setCell(coord_t x, coord_t y, Cell cell) {
-		ChunkCoord chunkCoord = chunkCoordOf(x, y);
-		if (!hasChunk(chunkCoord)) {
-			createChunk(chunkCoord)->setCell(x, y, cell);
-			return;
-		}
-
-		// Delegate the task to the corresponding Chunk
-		m_chunks.at(chunkCoord)->setCell(x, y, cell);
+		return m_chunks.at(chunkCoord)->getCell(coord);
 	}
 
 	/**
@@ -71,8 +31,15 @@ public:
 	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @param cell - The Cell object containing the new properties.
 	 */
-	void setCell(CellCoord coord, Cell cell) {
-		setCell(coord.x, coord.y, cell);
+	void setCell(const CellCoord& coord, Cell cell) {
+		ChunkCoord chunkCoord = coord.getChunkCoord();
+		if (!hasChunk(chunkCoord)) {
+			createChunk(chunkCoord)->setCell(coord, cell);
+			return;
+		}
+
+		// Delegate the task to the corresponding Chunk
+		m_chunks.at(chunkCoord)->setCell(coord, cell);
 	}
 
 	/**
@@ -82,22 +49,11 @@ public:
 	 * @param coord - The ChunkCoord specifying the coordinates of the Chunk.
 	 * @return Chunk* - A pointer to the retrieved or newly created Chunk.
 	 */
-	__host__ __device__
-	Chunk* getChunk(ChunkCoord coord) {
+	Chunk* getChunk(const ChunkCoord& coord) {
 		if (!hasChunk(coord))
-			#ifndef __CUDA_ARCH__
 			return createChunk(coord);
-			#else
-			return nullptr;
-			#endif
-
-		#ifndef __CUDA_ARCH__
+		
 		return m_chunks.at(coord);
-		#else
-		coord.x -= m_minDrawnChunk.x;
-		coord.y -= m_minDrawnChunk.y;
-		return &m_deviceChunks[coord.y * (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) + coord.x];
-		#endif
 	}
 
 	/**
@@ -107,8 +63,7 @@ public:
 	 * @param coord - The ChunkCoord specifying the coordinates of the Chunk.
 	 * @return const Chunk* - A const pointer to the retrieved or newly created Chunk.
 	 */
-	__host__ __device__
-	const Chunk* getChunk(ChunkCoord coord) const {
+	const Chunk* getChunk(const ChunkCoord& coord) const {
 		return getChunk(coord);
 	}
 
@@ -119,7 +74,7 @@ public:
 	 * @param coord - The ChunkCoord specifying the coordinates of the Chunk.
 	 * @return Chunk* - A pointer to the retrieved Chunk if populated; otherwise, nullptr.
 	 */
-	Chunk* getChunkIfPopulated(ChunkCoord coord) {
+	Chunk* getChunkIfPopulated(const ChunkCoord& coord) {
 		if (!hasChunk(coord))
 			return nullptr;
 
@@ -133,7 +88,7 @@ public:
 	 * @param coord - The ChunkCoord specifying the coordinates of the Chunk.
 	 * @return const Chunk* - A const pointer to the retrieved Chunk if populated; otherwise, nullptr.
 	 */
-	const Chunk* getChunkIfPopulated(ChunkCoord coord) const {
+	const Chunk* getChunkIfPopulated(const ChunkCoord& coord) const {
 		if (!hasChunk(coord))
 			return nullptr;
 
@@ -148,9 +103,9 @@ public:
 	 * @param a - The first CellCoord specifying the coordinates of the first Cell to be swapped.
 	 * @param b - The second CellCoord specifying the coordinates of the second Cell to be swapped.
 	 */
-	void swapCells(CellCoord a, CellCoord b) {
-		ChunkCoord aChunkCoord = chunkCoordOf(a);
-		ChunkCoord bChunkCoord = chunkCoordOf(b);
+	void swapCells(const CellCoord& a, const CellCoord& b) {
+		ChunkCoord aChunkCoord = a.getChunkCoord();
+		ChunkCoord bChunkCoord = b.getChunkCoord();
 		if (aChunkCoord == bChunkCoord) {
 			Chunk* chunk = getChunkIfPopulated(aChunkCoord);
 			if (chunk != nullptr)
@@ -173,32 +128,8 @@ public:
 	 * @param coord - The ChunkCoord specifying the coordinates of the Chunk.
 	 * @return bool - Returns true if the Chunk is empty (does not exist), false otherwise.
 	 */
-	__host__ __device__
-	bool isChunkEmpty(ChunkCoord coord) const {
+	bool isChunkEmpty(const ChunkCoord& coord) const {
 		return !hasChunk(coord);
-	}
-
-	/**
-	 * Calculates and returns the ChunkCoord based on the specified coordinates.
-	 *
-	 * @param x - The x-coordinate used to calculate the ChunkCoord.
-	 * @param y - The y-coordinate used to calculate the ChunkCoord.
-	 * @return ChunkCoord - The calculated ChunkCoord.
-	 */
-	__host__ __device__
-	static ChunkCoord chunkCoordOf(coord_t x, coord_t y) {
-		return ChunkCoord{ (coord_t)floor(x / (double)CHUNK_SIZE), (coord_t)floor(y / (double)CHUNK_SIZE) };
-	}
-
-	/**
-	 * Calculates and returns the ChunkCoord based on the specified CellCoord.
-	 *
-	 * @param coord - The CellCoord used to calculate the ChunkCoord.
-	 * @return ChunkCoord - The calculated ChunkCoord.
-	 */
-	__host__ __device__
-	static ChunkCoord chunkCoordOf(CellCoord coord) {
-		return chunkCoordOf(coord.x, coord.y);
 	}
 
 	/**
@@ -244,6 +175,8 @@ public:
 	 * @param path - The path where the World state should be loaded from.
 	 */
 	void load(const std::string& path) {
+		std::cout << "Loading world from " << path << "." << std::endl;
+
 		namespace fs = std::filesystem;
 
 		// Load world json
@@ -268,10 +201,12 @@ public:
 			if (!chunkFile.is_open())
 				continue;
 
-			Chunk* chunk = new Chunk(this);
-			chunk->deserialise(chunkFile);
+			// Deserialize chunk
+			Chunk* chunk = Chunk::deserialise(chunkFile, this);
 			m_chunks.insert({ chunk->m_coord, chunk });
 		}
+
+		std::cout << "Loaded " << m_chunks.size() << " chunks. " << std::endl;
 	}
 
 	/**
@@ -281,42 +216,26 @@ public:
 	 * @param coord - The ChunkCoord to be checked for visibility.
 	 * @return bool - Returns true if the ChunkCoord is within the visible region; otherwise, returns false.
 	 */
-	__host__ __device__
-	bool isChunkDrawn(ChunkCoord coord) const {
-		return m_minDrawnChunk.x <= coord.x && coord.x <= m_maxDrawnChunk.x
-			&& m_minDrawnChunk.y <= coord.y && coord.y <= m_maxDrawnChunk.y;
-	}
-
-	//void update(Options options, SimulationUpdateFunction updateFunction) {
-	//	// Update chunks without drawing them
-	//	updateImpl(options, updateFunction, false);
-	//}
-
-	//void draw(Options options) {
-	//	bool drawnChunksChanged = prepareDrawnChunksBuffer(options, false);
-
-	//	// If the screen moved draw chunks without updating them
-	//	if (drawnChunksChanged)
-	//		updateImpl(options, nullptr, true);
-
-	//	uploadDrawnChunksToDevice(drawnChunksChanged);
-	//}
+	bool isChunkDrawn(const ChunkCoord& coord) const;
 
 	void setPalette(ColorPalette* palette) {
 		m_palette = palette;
 	}
 
-	void updateAndDraw(Options options, SimulationUpdateFunction updateFunction) {
-		//bool drawnChunksChanged = prepareDrawnChunksBuffer(options, true);
+	void draw(const Options& options);
 
-		// Update and draw chunks
-		updateImpl(options, updateFunction, true);
+	void update(const Options& options, SimulationUpdateFunction updateFunction) {
+		m_evenTick = !m_evenTick;
 
-		//uploadDrawnChunksToDevice(drawnChunksChanged);
-	}
+		//for (auto& chunk : m_chunks) {
+		//	chunk.second->process(options, updateFunction);
+		//}
 
-	bool isEvenTick() const {
-		return m_evenTick;
+		static auto updateTask = new ChunkWorkerTask(&Chunk::process);
+		updateTask->setArgs(options, updateFunction);
+		m_workers->execute(updateTask);
+
+		eraseEmptyChunks();
 	}
 
 	void requestChunkUpdate(ChunkCoord coord) {
@@ -324,127 +243,53 @@ public:
 			m_chunks.at(coord)->requestUpdate();
 	}
 
-	void drawChunk(Chunk* chunk) {
-		addChunkToDrawnChunks(chunk);
+	World();
+
+	// TODO: Serialize without copy constructor
+	World(const World&) = default;
+
+	World(World&&) = delete;
+	World& operator=(const World&) = delete;
+
+	bool isCellUpdated(Cell cell) const {
+		return cell.updatedOnEvenTick == m_evenTick;
 	}
 
-	World() {
-		m_workers = std::make_shared<ChunkWorkerPool>(m_chunks);
-	};
-
-	World(const World& world) = default;
+	bool evenTick() const {
+		return m_evenTick;
+	}
 
 private:
 	using ChunkMap = std::unordered_map<ChunkCoord, Chunk*, ChunkCoord::Hasher>;
 	using WorkerPool = std::shared_ptr<ChunkWorkerPool>;
 
-	ChunkMap			m_chunks{};
-	ColorPalette*		m_palette = nullptr;
+	ChunkMap		m_chunks{};
+	ColorPalette*	m_palette = nullptr;
 
-	ChunkCoord			m_minDrawnChunk;
-	ChunkCoord			m_maxDrawnChunk;
-	DeviceBuffer<Chunk> m_deviceChunks;
-	Chunk*				m_chunksToCommitToDevice = nullptr;
-
-	bool				m_evenTick;
-
-	WorkerPool			m_workers;
+	bool			m_evenTick = false;
+	WorldView*		m_view;
+	WorkerPool		m_workers;
 	
-#ifndef __CUDA_ARCH__
 	bool hasChunk(ChunkCoord coord) const {
 		return m_chunks.find(coord) != m_chunks.end();
 	}
-#else
-	__device__
-	bool hasChunk(ChunkCoord coord) const {
-		return isChunkDrawn(coord);
-	}
-#endif
 
-	void updateImpl(Options options, SimulationUpdateFunction updateFunction, bool doDraw) {
-		changeMinAndMaxDrawnChunks(options);
-
-		if (updateFunction != nullptr)
-			m_evenTick = !m_evenTick;
-		
-		auto updateTask = new ChunkWorkerTask(&Chunk::process);
-		updateTask->setArgs(options, updateFunction);
-		m_workers->execute(updateTask);
-
-		auto renderTask = new ChunkWorkerTask(&Chunk::render);
-		renderTask->setArgs(options, m_palette);
-		m_workers->execute(renderTask);
-
-		for (auto& chunk : m_chunks) {
-			if (chunk.second->empty()) {
-				m_chunks.erase(chunk.first);
-				break;
+	void eraseEmptyChunks() {
+		for (auto it = m_chunks.begin(); it != m_chunks.end();) {
+			if (it->second->empty()) {
+				delete it->second;
+				it = m_chunks.erase(it);
 			}
 			else
-				chunk.second->draw(options);
+				++it;
 		}
 	}
 
-	void addChunkToDrawnChunks(Chunk* chunk) {
-		ChunkCoord coord;
-		coord.x = chunk->m_coord.x - m_minDrawnChunk.x;
-		coord.y = chunk->m_coord.y - m_minDrawnChunk.y;
-
-		m_chunksToCommitToDevice[coord.y * (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) + coord.x] = *chunk;
-	}
-
-	//// returns true when reallocated the drawnChunksBuffer
-	//bool prepareDrawnChunksBuffer(Options options, bool clearChunks) {
-	//	size_t prevDrawnChunkCount = drawnChunkCount();
-	//	bool shouldReallocDrawnChunksBuffer = changeMinAndMaxDrawnChunks(options);
-
-	//	if (shouldReallocDrawnChunksBuffer && drawnChunkCount() != prevDrawnChunkCount)
-	//		reallocDrawnChunksBuffer();
-	//	else if (clearChunks)
-	//		resetDrawnChunksBuffer();
-
-	//	return shouldReallocDrawnChunksBuffer;
-	//}
-
-	//void uploadDrawnChunksToDevice(bool drawnChunksChanged) {
-	//	// Copy drawn chunks buffer to the device
-	//	if (!m_deviceChunks.isAllocated() || drawnChunksChanged)
-	//		m_deviceChunks.alloc(drawnChunkCount());
-	//	m_deviceChunks.upload(m_chunksToCommitToDevice, drawnChunkCount());
-	//}
-
-	//void reallocDrawnChunksBuffer() {
-	//	if (m_chunksToCommitToDevice != nullptr)
-	//		delete[] m_chunksToCommitToDevice;
-
-	//	m_chunksToCommitToDevice = new Chunk[drawnChunkCount() * sizeof(Chunk)];
-	//	//m_chunksToCommitToDevice = (Chunk*)calloc(drawnChunkCount(), sizeof(Chunk));
-	//}
-
-	//// Memsets the buffer to 0
-	//void resetDrawnChunksBuffer() {
-	//	//for (int i = 0; i < drawnChunkCount(); ++i)
-	//	//	m_chunksToCommitToDevice[i] = Chunk();
-	//	memset(m_chunksToCommitToDevice, 0, drawnChunkCount() * sizeof(Chunk));
-	//}
-
-	// Returns true when value changed
-	bool changeMinAndMaxDrawnChunks(Options options) {
-		vec2 minCameraPos, maxCameraPos;
-		options.camera.getMinWorldPos(options.windowWidth, options.windowHeight, minCameraPos.x, minCameraPos.y);
-		options.camera.getMaxWorldPos(options.windowWidth, options.windowHeight, maxCameraPos.x, maxCameraPos.y);
-
-		ChunkCoord prevMinDrawnChunk = m_minDrawnChunk, prevMaxDrawnChunk = m_maxDrawnChunk;
-		m_minDrawnChunk = chunkCoordOf(minCameraPos.x, minCameraPos.y);
-		m_maxDrawnChunk = chunkCoordOf(maxCameraPos.x, maxCameraPos.y);
-		return (prevMinDrawnChunk != m_minDrawnChunk) || (prevMaxDrawnChunk != m_maxDrawnChunk);
-	}
-
-	size_t drawnChunkCount() const {
-		return (m_maxDrawnChunk.x - m_minDrawnChunk.x + 1) * (m_maxDrawnChunk.y - m_minDrawnChunk.y + 1);
-	}
-
 	Chunk* createChunk(ChunkCoord coord) {
+		// TODO: this is temp
+		static std::mutex c_mut;
+		std::lock_guard<std::mutex> lock(c_mut);
+
 		Chunk* chunk = new Chunk(this, coord);
 		m_chunks.insert({ coord, chunk });
 		return chunk;

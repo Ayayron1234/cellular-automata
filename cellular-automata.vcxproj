@@ -54,8 +54,8 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies\SDL2\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;SDL2main.lib;glew32.lib;OpenGL32.lib;Glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)dependencies\SDL2\lib\$(Platform);$(SolutionDir)dependencies\glew\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
@@ -78,8 +78,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;SDL2main.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies\SDL2\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cudart_static.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;SDL2.lib;SDL2main.lib;glew32.lib;OpenGL32.lib;Glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)dependencies\SDL2\lib\$(Platform);$(SolutionDir)dependencies\glew\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
@@ -87,6 +87,9 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\graphics_headers.h" />
+    <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3.h" />
+    <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3_loader.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_sdl2.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_sdlrenderer2.h" />
     <ClInclude Include="dependencies\imgui\imconfig.h" />
@@ -108,23 +111,30 @@
     <ClInclude Include="src\simulation.h" />
     <ClInclude Include="src\simulation\cell.h" />
     <ClInclude Include="src\simulation\chunk.h" />
+    <ClInclude Include="src\simulation\chunk_state.h" />
     <ClInclude Include="src\simulation\chunk_view.h" />
     <ClInclude Include="src\simulation\chunk_worker.h" />
     <ClInclude Include="src\simulation\color_palette.h" />
     <ClInclude Include="src\simulation\common.h" />
-    <ClInclude Include="src\simulation\kernels.h" />
     <ClInclude Include="src\simulation\world.h" />
+    <ClInclude Include="src\simulation\world_view.h" />
     <ClInclude Include="src\utils.h" />
     <ClInclude Include="src\utils\bitmap.h" />
     <ClInclude Include="src\utils\camera.h" />
     <ClInclude Include="src\utils\ExternalResource.h" />
+    <ClInclude Include="src\utils\file_watcher.h" />
     <ClInclude Include="src\utils\IO.h" />
     <ClInclude Include="src\utils\Json.h" />
     <ClInclude Include="src\utils\options.h" />
+    <ClInclude Include="src\utils\shader.h" />
     <ClInclude Include="src\utils\vec2.h" />
-    <CudaCompile Include="src\simulation\kernels\draw_grid.cu" />
+    <ClCompile Include="src\simulation\cell.cpp" />
+    <ClCompile Include="src\simulation\chunk_view.cpp">
+      <FileType>Document</FileType>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="dependencies\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="dependencies\imgui\backends\imgui_impl_sdl2.cpp" />
     <ClCompile Include="dependencies\imgui\backends\imgui_impl_sdlrenderer2.cpp" />
     <ClCompile Include="dependencies\imgui\imgui.cpp" />
@@ -137,10 +147,18 @@
     <ClCompile Include="dependencies\imgui\imgui_widgets.cpp" />
     <ClCompile Include="src\cellular-automata.cpp" />
     <ClCompile Include="src\simulation\chunk.cpp" />
+    <ClCompile Include="src\simulation\world.cpp" />
     <ClCompile Include="src\utils\IO.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".gitignore" />
     <None Include="cpp.hint" />
+    <None Include="data\shaders\chunk_fs.glsl" />
+    <None Include="data\shaders\chunk_vs.glsl" />
+    <None Include="data\shaders\color_fs.glsl" />
+    <None Include="data\shaders\color_vs.glsl" />
+    <None Include="imgui.ini" />
+    <None Include="README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

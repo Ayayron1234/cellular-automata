@@ -10,6 +10,7 @@ bool g_propertiesWindowHovered = false;
 
 long long g_updateDuration;
 long long g_renderDuration;
+long long g_otherDuration;
 
 /*
 TODO: 
@@ -78,6 +79,7 @@ void ShowPropertiesWindow() {
     ImGui::SeparatorText("Performance:");
     ImGui::Text("Update: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_updateDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
     ImGui::Text("Render: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_renderDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
+    ImGui::Text("Other: "); ImGui::SameLine(); ImGui::Text("%f", (float)g_otherDuration / 1000.f); ImGui::SameLine(); ImGui::Text("ms");
 
     // Display mouse position
     std::stringstream mousePosSStream;
@@ -119,9 +121,18 @@ void UpdateCamera(vec2 mouseWorldPos, const Uint8* state, vec2 normalizedMousePo
         zoom = 1.L / zoomDN;
 
     // Update properties considering zoom level and smooth zoom decrease
-    if (abs(zoom - 1.L) > 0.0001f)
-        g_options.camera.position = g_options.camera.position - 0.5L * normalizedMousePos / g_options.camera.zoom + 0.5L * normalizedMousePos / (g_options.camera.zoom * zoom);
     g_options.camera.zoom *= zoom;
+
+    auto& camPos = g_options.camera.position;
+    if (abs(zoom - 1.L) > 0.0001f)
+        camPos = camPos - 
+            //(
+        ((normalizedMousePos) / g_options.camera.zoom - (normalizedMousePos) / (g_options.camera.zoom * zoom))
+                //)
+            //* vec2(g_options.windowHeight / g_options.windowWidth, 1.f)
+        ;
+
+
     zoom = 1.L + (zoom - 1.L) * 0.75L;
 }
 
@@ -193,80 +204,71 @@ void UpdateChunk(Options options, Chunk& chunk) {
         int x = x0 + (_x % CHUNK_SIZE);
         int y = y0 + _y;
 
-        Cell cell = chunk.getCell(x, y);
+        Cell cell = chunk.getCell({ x, y });
 
-        if (cell.type == Cell::Type::AIR || cell.updatedOnEvenTick == evenTick) {
-            //cell.updatedOnEvenTick = evenTick;
-            //chunk.setCell(x, y, cell);
-            continue;
-        }
+        Cell::update(cell, chunk, x, y);
 
-        if (cell.type == Cell::Type::SAND) {
-            CellCoord destination(x, y + 1);
-
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-
-            char displacement = evenTick * 2 - 1;
-            destination.x += displacement;
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-
-            destination.x -= 2 * displacement;
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-        } 
-
-        if (cell.type == Cell::Type::WATER) {
-            CellCoord destination(x, y + 1);
-
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-
-            char displacement = evenTick * 2 - 1;
-            destination.x += displacement;
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-
-            destination.x -= 2 * displacement;
-            if (chunk.getCell(destination).isLighter(cell)) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-
-            destination.y = y;
-            int directionVec = (int)cell.water.direction * 2 - 1;
-            destination.x = x + directionVec;
-
-            for (destination.x = x + directionVec; chunk.getCell(destination).isLighter(cell) && abs(destination.x - x) < 7; destination.x += directionVec) { }
-            destination.x -= directionVec;
-
-            if (destination.x != x) {
-                chunk.swapCells({ x, y }, destination);
-                chunk.markCellAsUpdated(destination, evenTick);
-                continue;
-            }
-            
-            cell.updatedOnEvenTick = evenTick;
-            cell.water.direction += 1;
-            chunk.setCell({ x, y }, cell);
-        }
+        //if (cell.type == Cell::Type::AIR || cell.updatedOnEvenTick == evenTick) {
+        //    //cell.updatedOnEvenTick = evenTick;
+        //    //chunk.setCell(x, y, cell);
+        //    continue;
+        //}
+        //if (cell.type == Cell::Type::SAND) {
+        //    CellCoord destination(x, y - 1);
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    char displacement = evenTick * 2 - 1;
+        //    destination.x += displacement;
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    destination.x -= 2 * displacement;
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //} 
+        //if (cell.type == Cell::Type::WATER) {
+        //    CellCoord destination(x, y - 1);
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    char displacement = evenTick * 2 - 1;
+        //    destination.x += displacement;
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    destination.x -= 2 * displacement;
+        //    if (chunk.getCell(destination).isLighter(cell)) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    destination.y = y;
+        //    int directionVec = (int)cell.water.direction * 2 - 1;
+        //    destination.x = x + directionVec;
+        //    for (destination.x = x + directionVec; chunk.getCell(destination).isLighter(cell) && abs(destination.x - x) < 7; destination.x += directionVec) { }
+        //    destination.x -= directionVec;
+        //    if (destination.x != x) {
+        //        chunk.swapCells({ x, y }, destination);
+        //        chunk.markCellAsUpdated(destination, evenTick);
+        //        continue;
+        //    }
+        //    
+        //    cell.updatedOnEvenTick = evenTick;
+        //    cell.water.direction += 1;
+        //    chunk.setCell({ x, y }, cell);
+        //}
     }
 }
 
@@ -285,7 +287,8 @@ int main() {
         worldPath = worldPathStream.str();
     }
 
-    IO::OpenWindow(g_options.windowWidth, g_options.windowHeight);
+    if (!IO::OpenWindow(g_options.windowWidth, g_options.windowHeight))
+        exit(1);
 
     World world;
     world.load(worldPath);
@@ -298,6 +301,8 @@ int main() {
 
     vec2 dragStart; // normalized
     while (!SDL_QuitRequested()) {
+        auto otherStart = std::chrono::high_resolution_clock::now();
+
         // Handle events
         IO::HandleEvents();
         g_options.windowWidth = IO::GetWindowWidth();
@@ -320,8 +325,8 @@ int main() {
 
         int mouseWorldPosFlooredX = (int)floor(mouseWorldPos.x);
         int mouseWorldPosFlooredY = (int)floor(mouseWorldPos.y);
-        if (IO::MouseClicked(SDL_BUTTON_RIGHT) && world.getCell(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type != Cell::Type::AIR) {
-            std::cout << (int)world.getCell(mouseWorldPosFlooredX, mouseWorldPosFlooredY).type << std::endl;
+        if (IO::MouseClicked(SDL_BUTTON_RIGHT) && world.getCell({ mouseWorldPosFlooredX, mouseWorldPosFlooredY }).type != Cell::Type::AIR) {
+            std::cout << (int)world.getCell({ mouseWorldPosFlooredX, mouseWorldPosFlooredY }).type << std::endl;
             c_valueBeforeClearStart = c_valueToSet;
             c_valueToSet = Cell::Type::AIR;
         }
@@ -339,7 +344,8 @@ int main() {
                 float distance = length(vec2(x + dX, y + dY) - vec2(x + brushSize / 2, y + brushSize / 2));
                 if (distance < brushSize / 2) {
                     Cell newCell = Cell::create(Cell::Type(c_valueToSet));
-                    world.setCell(x + dX, y + dY, newCell);
+                    newCell.updatedOnEvenTick = (g_simulationStepCount) % 2;
+                    world.setCell({ x + dX, y + dY }, newCell);
                 }
             }
         }
@@ -361,6 +367,16 @@ int main() {
             }
         }
 
+#ifdef _DEBUG
+        if (IO::IsKeyDown(SDL_SCANCODE_B)) {
+            std::cout << "yes" << std::endl;
+            ChunkCoord coord = CellCoord(mouseWorldPos).getChunkCoord();
+            Chunk* chunk = world.getChunkIfPopulated(coord);
+            if (chunk)
+                chunk->_dbgInsertBreakOnProcess();
+        }
+#endif
+
         //// Invoke CUDA function
         //static long c_tickCount = 0;
         //if (g_options.stateTransitionTickDelay != 0 && (IO::GetTicks()) % g_options.stateTransitionTickDelay == 0) {
@@ -381,13 +397,14 @@ int main() {
 
         auto updateStart = std::chrono::high_resolution_clock::now();
 
-        world.updateAndDraw(g_options, UpdateChunk);
+        world.update(g_options, UpdateChunk);
         ++g_simulationStepCount;
 
         auto updateEnd = std::chrono::high_resolution_clock::now();
         g_updateDuration = std::chrono::duration_cast<std::chrono::microseconds>(updateEnd - updateStart).count();
 
 
+        shouldDraw = true;
         if (shouldDraw) {
             // Draw GUI
             ShowPropertiesWindow();
@@ -397,6 +414,7 @@ int main() {
 
             //if (IO::Resized())
                 //rendererKernel.data().changeBuffer(IO::GetOutputBuffer(), IO::GetWindowWidth() * IO::GetWindowHeight());
+            world.draw(g_options);
 
             //rendererKernel.execute(world, g_options, colorPalette);
 
@@ -410,6 +428,9 @@ int main() {
         if (IO::FileDropped()) {
             HandleDroppedFile(IO::GetDroppedFilePath());
         }
+
+        auto otherEnd = std::chrono::high_resolution_clock::now();
+        g_otherDuration = std::chrono::duration_cast<std::chrono::microseconds>(otherEnd - otherStart).count() - g_updateDuration - ((shouldDraw) ? g_renderDuration : 0.f);
     }
 
     world.save(worldPath);
