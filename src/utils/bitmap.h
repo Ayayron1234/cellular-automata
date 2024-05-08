@@ -2,6 +2,8 @@
 #include <iostream>
 #include <fstream>
 #include <intrin.h>
+#include <memory>
+#include "IO.h"
 
 class Bitmap {
 private:
@@ -43,15 +45,22 @@ private:
 public:
 	Bitmap(const char* path) {
         std::ifstream ifs(path, std::ios::binary);
+        if (!ifs.is_open())
+            return;
+
         readHeader(ifs);
 
-        m_pixelArray = new unsigned char[m_dibHeader.imageSize];
+        m_pixelArray = std::make_shared<unsigned char[]>(m_dibHeader.imageSize);
         ifs.seekg(ifs.beg);
         ifs.seekg(m_fileHeader.offsetToPixelArray());
-        ifs.read((char*)m_pixelArray, m_dibHeader.imageSize);
+        ifs.read((char*)m_pixelArray.get(), m_dibHeader.imageSize);
 
         setChanelOffsets();
+
+        m_loaded = true;
 	}
+
+    Bitmap(const Bitmap&) = default;
 
     unsigned int getOriginal(unsigned int x, unsigned int y) const {
         if (x >= m_dibHeader.imageWidth || y >= m_dibHeader.imageHeight)
@@ -64,7 +73,7 @@ public:
         unsigned int pixel;
         unsigned int position = (m_dibHeader.imageHeight - y - 1) * rowSize + x * pixelSize;
 
-        memcpy(&pixel, &m_pixelArray[position], pixelSize);
+        memcpy(&pixel, &m_pixelArray.get()[position], pixelSize);
         return pixel;
     }
 
@@ -76,6 +85,19 @@ public:
         ((unsigned char*)&rgba)[2] = ((unsigned char*)&original)[m_bChanelOffset];
         ((unsigned char*)&rgba)[3] = ((unsigned char*)&original)[m_aChanelOffset];
         return rgba;
+    }
+
+    std::shared_ptr<IO::RGB[]> getRGBABuffer() const {
+        std::shared_ptr<IO::RGB[]> buffer = std::make_shared<IO::RGB[]>(m_dibHeader.imageWidth * m_dibHeader.imageHeight);
+
+        for (int x = 0; x < m_dibHeader.imageWidth; ++x)
+            for (int y = 0; y < m_dibHeader.imageHeight; ++y) {
+                IO::RGB color;
+                *(unsigned*)&color = getRGBA(x, y);
+                buffer[y * m_dibHeader.imageWidth + x] = color;
+            }
+
+        return buffer;
     }
 
     unsigned int getARGB(unsigned int x, unsigned int y) const {
@@ -98,10 +120,17 @@ public:
         return m_dibHeader.imageHeight;
     }
 
+    bool loaded() const {
+        return m_loaded;
+    }
+
 private:
-    unsigned char* m_pixelArray;
-    BitmapFileHeader m_fileHeader;
-    DIBHeader m_dibHeader;
+
+    std::shared_ptr<unsigned char[]> m_pixelArray;
+
+    bool                m_loaded = false;
+    BitmapFileHeader    m_fileHeader;
+    DIBHeader           m_dibHeader;
 
     int m_rChanelOffset = 0;
     int m_gChanelOffset = 1;

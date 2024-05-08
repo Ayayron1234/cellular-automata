@@ -9,13 +9,29 @@
 #define DBG_BREAK_PROCESS
 #endif // _DEBUG
 
-inline Cell Chunk::getCell(const CellCoord& coord) const {
+const Cell& Chunk::getCell(const CellCoord& coord) const {
+	static Cell c_air = Cell();
+
 	if (isCoordInside(coord)) {
 		if (empty())
-			return Cell();
+			return c_air;
+
 		return m_cells[coordToIndex(coord)];
 	}
+
 	return m_world->getCell(coord);
+}
+
+Cell& Chunk::cell(const CellCoord& coord) {
+	if (isCoordInside(coord)) {
+		if (empty()) {
+			Cell air;
+			return air;
+		}
+		//	throw std::runtime_error("Can't access cell of an empty chunk without const modifier. ");
+		return m_cells[coordToIndex(coord)];
+	}
+	return m_world->cell(coord);
 }
 
 void Chunk::setCell(const CellCoord& coord, Cell cell) {

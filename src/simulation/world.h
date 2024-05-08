@@ -13,15 +13,29 @@ public:
 	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @return Cell - The Cell object at the specified coordinates.
 	 */
-	Cell getCell(const CellCoord& coord) const {
+	const Cell& getCell(const CellCoord& coord) const {
 		ChunkCoord chunkCoord = coord.getChunkCoord();
 
 		// Check if the corresponding Chunk exists
+		static Cell c_air = Cell();
 		if (!hasChunk(chunkCoord))
-			return SimValues::Air();
+			return c_air;
 
 		// Delegate the task to the corresponding Chunk
 		return m_chunks.at(chunkCoord)->getCell(coord);
+	}
+
+	Cell& cell(const CellCoord& coord) {
+		ChunkCoord chunkCoord = coord.getChunkCoord();
+
+		// Check if the corresponding Chunk exists
+		if (!hasChunk(chunkCoord)) {
+			Cell air;
+			return air;
+		}
+
+		// Delegate the task to the corresponding Chunk
+		return m_chunks.at(chunkCoord)->cell(coord);
 	}
 
 	/**
@@ -218,8 +232,8 @@ public:
 	 */
 	bool isChunkDrawn(const ChunkCoord& coord) const;
 
-	void setPalette(ColorPalette* palette) {
-		m_palette = palette;
+	void setPalette(const ColorPalette& palette) {
+		m_palette = new ColorPalette(palette);
 	}
 
 	void draw(const Options& options);

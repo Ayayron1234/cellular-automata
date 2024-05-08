@@ -46,7 +46,7 @@ void endFrame() {
 	SDL_GL_SwapWindow(SDL.window);
 
 	// Clear buffer
-	glClearColor(0, 0, 0, 1);
+	glClearColor(104 / 256.f, 147 / 256.f, 156 / 256.f, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 

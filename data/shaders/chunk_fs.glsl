@@ -1,4 +1,5 @@
 #version 330
+#extension GL_ARB_gpu_shader5 : enable
 precision highp float;
 
 uniform sampler1D colorPalette;
@@ -22,10 +23,13 @@ void main() {
 	// Read the cell data from the chunk texture
 	vec4 cellData = texture(cells, texcoord * (chunkSize - 1) / chunkSize);
 
-	float type = (int(cellData.r * 255.0) << 3) / 255.0;
-	float shade = (int(cellData.r * 255.0 * 255.0 + cellData.g * 255.0) >> 5) / 65535.0;
+	int byte = int(cellData.r * 255.0);
+	int bytes = int(cellData.r * 255.0 + cellData.g * 255.0 * 255.0);
 
-	vec4 color = texture(colorPalette, pos1d(vec2(shade, type)));
+	unsigned int type = (byte & 0x001F);
+	unsigned int shade = (bytes & 0x07E0) / 32;
+
+	vec4 color = texture(colorPalette, type / 32.0 + shade / (32.0 * 64.0));
 	
 	fragmentColor = color;
 }
