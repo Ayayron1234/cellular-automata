@@ -84,9 +84,8 @@ int main() {
             shouldUpdate = false;
 
         // Update world
-        if (shouldUpdate)
-            TASK("Update", 
-                world.update(gui.options(), UpdateChunk); );
+        if (shouldUpdate) TASK("Update",
+            world.update(gui.options(), UpdateChunk); );
 
         // Render and draw to screen
         TASK("Render", {

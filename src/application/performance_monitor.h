@@ -7,7 +7,7 @@
 
 #define BEGIN_TASK(name) PERF_MONITOR.beginTask(name)
 #define END_TASK(name, ...) PERF_MONITOR.endTask(name, __VA_ARGS__)
-#define TASK(name, body) do { BEGIN_TASK(name); body END_TASK(name); } while (false)
+#define TASK(name, body, ...) do { BEGIN_TASK(name); body END_TASK(name, __VA_ARGS__); } while (false)
 #define LOG_TASK(name, body) do { BEGIN_TASK(name); body END_TASK(name); PERF_MONITOR.log(name); PERF_MONITOR.forget(name); } while (false)
 
 class PerformanceMonitor {
@@ -29,19 +29,13 @@ class PerformanceMonitor {
 
 public:
 	void beginTask(const std::string& name) {
-		auto taskIt = m_tasks.find(name);
-		Task& task = (taskIt == m_tasks.end())
-			? m_tasks.insert({ name, Task{} }).first->second
-			: taskIt->second;
+		Task& task = getOrCreateTask(name);
 
 		task.startTime = now();
 	}
 
 	void endTask(const std::string& name, std::vector<std::string> subTasks = std::vector<std::string>{}) {
-		auto taskIt = m_tasks.find(name);
-		Task& task = (taskIt == m_tasks.end())
-			? m_tasks.insert({ name, Task{} }).first->second
-			: taskIt->second;
+		Task& task = getOrCreateTask(name);
 
 		long long subTasksSumDuration = 0;
 		for (auto& name : subTasks)
@@ -90,6 +84,13 @@ private:
 
 	long long durationInMicroSeconds(time_point start, time_point end) const {
 		return std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+	}
+
+	Task& getOrCreateTask(const std::string& name) {
+		auto taskIt = m_tasks.find(name);
+		return (taskIt == m_tasks.end())
+			? m_tasks.insert({ name, Task{} }).first->second
+			: taskIt->second;
 	}
 
 };

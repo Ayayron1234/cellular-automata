@@ -41,8 +41,15 @@ public:
         // Handle events
         IO::HandleEvents();
 
+        // Handle window resize
+        if (IO::Resized()) {
+            m_options.windowWidth = IO::GetWindowWidth();
+            m_options.windowHeight = IO::GetWindowHeight();
+        }
+
         vec2 normalizedMousePos = IO::NormalizePixel((int)IO::GetMousePos().x, (int)IO::GetMousePos().y);
-        vec2 mouseWorldPos = m_options.camera.screenToWorld(IO::GetWindowWidth(), IO::GetWindowHeight(), IO::GetMousePos());
+        vec2 mouseWorldPos = m_options.camera.screenToWorld(m_options.windowWidth, m_options.windowHeight, IO::GetMousePos());
+        CellCoord mouseCellCoord{ (int)floor(mouseWorldPos.x), (int)floor(mouseWorldPos.y) };
 
         // Insert break point to hovered chunks process method with the B key
         #ifdef _DEBUG
@@ -65,14 +72,14 @@ public:
 
         // Copy cell type to brush with middle mouse click
         if (IO::MouseClicked(SDL_BUTTON_MIDDLE)) {
-            Cell target = world.getCell(mouseWorldPos);
+            Cell target = world.getCell(mouseCellCoord);
             if (target.type != Cell::Type::AIR)
                 m_options.brushCellType = (int)target.type;
         }
 
         // Draw with brush when right button is pressed
         if (IO::IsButtonDown(SDL_BUTTON_RIGHT) && m_brush != nullptr)
-            m_brush->draw(mouseWorldPos, world);
+            m_brush->draw(mouseCellCoord, world);
 
         moveCamera(mouseWorldPos, normalizedMousePos);
 	}
@@ -198,9 +205,10 @@ private:
     }
 
     void showMousePositionImGuiWidget() {
+        vec2 mouseWorldPos = m_options.camera.screenToWorld(m_options.windowWidth, m_options.windowHeight, IO::GetMousePos());
+        
         std::stringstream mousePosSStream;
-        auto mousePos = m_options.camera.screenToWorld(IO::GetWindowWidth(), IO::GetWindowHeight(), IO::GetMousePos());
-        mousePosSStream << "Mouse position: {" << mousePos.x << "," << mousePos.y << "}";
+        mousePosSStream << "Mouse position: {" << mouseWorldPos.x << "," << mouseWorldPos.y << "}";
         ImGui::Text(mousePosSStream.str().c_str());
     }
 
