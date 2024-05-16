@@ -7,8 +7,8 @@
 
 #define BEGIN_TASK(name) PERF_MONITOR.beginTask(name)
 #define END_TASK(name, ...) PERF_MONITOR.endTask(name, __VA_ARGS__)
-#define TASK(name, body, ...) do { BEGIN_TASK(name); body END_TASK(name, __VA_ARGS__); } while (false)
-#define LOG_TASK(name, body) do { BEGIN_TASK(name); body END_TASK(name); PERF_MONITOR.log(name); PERF_MONITOR.forget(name); } while (false)
+#define MEASURE(name, body, ...) do { BEGIN_TASK(name); body END_TASK(name, __VA_ARGS__); } while (false)
+#define MEASURE_LOG(name, body) do { BEGIN_TASK(name); body END_TASK(name); PERF_MONITOR.log(name); PERF_MONITOR.forget(name); } while (false)
 
 class PerformanceMonitor {
 	using time_point = std::chrono::steady_clock::time_point;

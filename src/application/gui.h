@@ -20,10 +20,10 @@ public:
             return c_worldPath;
 
         // Set default world in debug mode
-        #ifdef DEBUG
+        #ifdef _DEBUG
         c_worldPath = "data/worlds/dbgTest";
         return c_worldPath;
-        #endif // DEBUG
+        #endif // _DEBUG
 
         // Read world name from the console
         std::cout << "World name: ";

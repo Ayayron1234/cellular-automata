@@ -91,6 +91,7 @@
     <ClInclude Include="dependencies\stb_image.h" />
     <ClInclude Include="src\application.h" />
     <ClInclude Include="src\application\gui.h" />
+    <ClInclude Include="src\application\overlay.h" />
     <ClInclude Include="src\graphics_headers.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3_loader.h" />

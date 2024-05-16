@@ -64,7 +64,7 @@ int main() {
 
     // Load world
     World world;
-    LOG_TASK("World Load", {
+    MEASURE_LOG("World Load", {
         world.load(gui.getWorldPath());
         world.setPalette(ColorPalette::loadFromFile("data/color_palett.bmp"));
     });
@@ -84,11 +84,11 @@ int main() {
             shouldUpdate = false;
 
         // Update world
-        if (shouldUpdate) TASK("Update",
+        if (shouldUpdate) MEASURE("Update",
             world.update(gui.options(), UpdateChunk); );
 
         // Render and draw to screen
-        TASK("Render", {
+        MEASURE("Render", {
             world.draw(gui.options());
             gui.render();
         });
@@ -96,7 +96,7 @@ int main() {
         END_TASK("Other", { "Render", "Update" });
     }
 
-    LOG_TASK("Save world",
+    MEASURE_LOG("Save world",
         world.save(gui.getWorldPath()); );
 
     return 0;

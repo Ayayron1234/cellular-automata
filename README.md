@@ -27,3 +27,6 @@
 | 2024.04.20 | 5 óra | Hot shader reloading. Shaderek autómatikusan frissülnek, ha az őket tartalmazó file-ba írok. Letisztítottam kicsit a Shader osztály implementációját. 
 | 2024.04.23 | 6 óra | Bug hunting. Javítottam egy hibát a szomszédos chunkok frissítésével. Javítás egyszerű volt, de nehezen találtam meg a hiba okát. 
 | 2024.04.24 | 3 óra | Fixed occasional freezing on chunk creation. Fixed some memory leaks. Started removing CUDA integration which was needed for earlyer rendering implementation. 
+| 2024.05.06 | 8 óra | glsl cell shade error fix, Eraser, SolidBrush, RandomizerBrush
+| 2024.05.07 | 8 óra | Texture, TexturedBrush, imgui brush widget, Cell::update(), bitmap hot reload (for color palette and textures), isFreefalling
+| 2024.05.08 | 8 óra | textured brush imgui widget, PerformanceMonitor, GUI, main file cleanup
