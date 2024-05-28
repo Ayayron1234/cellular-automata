@@ -56,6 +56,10 @@ void UpdateChunk(Options options, Chunk& chunk) {
 }
 
 int main() {
+    Options options{};
+    Json optionsJson = Json(options);
+    Options copy = optionsJson;
+
     // Init GUI
     GUI gui;
     gui.getWorldPath();
