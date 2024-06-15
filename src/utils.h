@@ -7,6 +7,8 @@
 #include "utils/IO.h"
 #include "utils/bitmap.h"
 #include "utils/file_watcher.h"
+#include "utils/texture.h"
+#include "utils/shader.h"
 
 #include <chrono>
 

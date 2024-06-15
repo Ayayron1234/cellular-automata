@@ -17,4 +17,16 @@ struct Options {
 
     int brushSize = 12;
     bool showChunkBorders = false;
-}; JSON_C(Options, JSON_M(windowWidth), JSON_M(windowHeight), JSON_M(camera), JSON_M(stateTransitionTickDelay), JSON_M(brushSize), JSON_M(simulationEnabled))
+    unsigned short brushCellType = 19;
+    int brushShade = 0;
+    std::string brushTexturePath = "data/textures/stone_01.bmp";
+
+    float updateWaitTimeMs = 0.f;
+    float renderWaitTimeMs = 0.f;
+
+}; JSON_C(Options,
+    JSON_M(windowWidth), JSON_M(windowHeight),
+    JSON_M(camera), JSON_M(stateTransitionTickDelay),
+    JSON_M(brushSize), JSON_M(simulationEnabled), JSON_M(brushCellType),
+    JSON_M(updateWaitTimeMs), JSON_M(renderWaitTimeMs)
+)

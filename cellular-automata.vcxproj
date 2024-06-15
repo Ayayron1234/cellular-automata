@@ -87,6 +87,11 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\utils\texture.cpp" />
+    <ClInclude Include="dependencies\stb_image.h" />
+    <ClInclude Include="src\application.h" />
+    <ClInclude Include="src\application\gui.h" />
+    <ClInclude Include="src\application\overlay.h" />
     <ClInclude Include="src\graphics_headers.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3.h" />
     <ClInclude Include="dependencies\imgui\backends\imgui_impl_opengl3_loader.h" />
@@ -109,6 +114,7 @@
     <ClInclude Include="src\device\global_buffer.h" />
     <ClInclude Include="src\device\kernel.h" />
     <ClInclude Include="src\simulation.h" />
+    <ClInclude Include="src\application\brush.h" />
     <ClInclude Include="src\simulation\cell.h" />
     <ClInclude Include="src\simulation\chunk.h" />
     <ClInclude Include="src\simulation\chunk_state.h" />
@@ -126,7 +132,9 @@
     <ClInclude Include="src\utils\IO.h" />
     <ClInclude Include="src\utils\Json.h" />
     <ClInclude Include="src\utils\options.h" />
+    <ClInclude Include="src\application\performance_monitor.h" />
     <ClInclude Include="src\utils\shader.h" />
+    <ClInclude Include="src\utils\texture.h" />
     <ClInclude Include="src\utils\vec2.h" />
     <ClCompile Include="src\simulation\cell.cpp" />
     <ClCompile Include="src\simulation\chunk_view.cpp">

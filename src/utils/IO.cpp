@@ -47,6 +47,7 @@ void endFrame() {
 
 	// Clear buffer
 	glClearColor(0, 0, 0, 1);
+	//glClearColor(104 / 256.f, 147 / 256.f, 156 / 256.f, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
@@ -174,6 +175,7 @@ bool OpenWindow(int width, int height) {
 	io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+	//ImGui::StyleColorsLight();
 	ImGui::StyleColorsClassic();
 
 	ImGui_ImplSDL2_InitForOpenGL(SDL.window, SDL.glContext);

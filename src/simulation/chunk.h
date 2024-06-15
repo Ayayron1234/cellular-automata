@@ -16,7 +16,9 @@ public:
 	 * @param coord - The CellCoord specifying the coordinates of the Cell.
 	 * @return Cell - The Cell object at the specified coordinates.
 	 */
-	Cell getCell(const CellCoord& coord) const;
+	const Cell& getCell(const CellCoord& coord) const;
+
+	Cell& cell(const CellCoord& coord);
 
 	/**
 	 * Sets the properties of the Cell at the specified CellCoord within the Chunk.

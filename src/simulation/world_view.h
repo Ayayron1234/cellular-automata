@@ -11,7 +11,7 @@ class WorldView {
 public:
 	enum class ShaderType { CellTexture, Color };
 
-	void draw(const ColorPalette& palette, const Options& options) {
+	void draw(ColorPalette& palette, const Options& options) {
 		cullChunks(options);
 
 		genVaoAndBind();
@@ -59,7 +59,7 @@ private:
 	inline static Shader s_chunkShader{};
 	inline static Shader s_colorShader{};
 
-	void createPalette(const ColorPalette& palette) {
+	void createPalette(ColorPalette& palette) {
 		if (m_paletteBufferPtr == palette.getBuffer())
 			return;
 
